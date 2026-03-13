@@ -3,6 +3,73 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffect } from 'react';
 
+// ── Global unread DM counts ──────────────────────────────────────────────────
+
+/** Returns { total, byFriend: { [senderId]: count } } */
+export function useUnreadDMCounts() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  const query = useQuery({
+    queryKey: ['unread-dms', user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('direct_messages')
+        .select('sender_id')
+        .eq('receiver_id', user!.id)
+        .eq('is_read', false);
+      if (error) throw error;
+      const byFriend: Record<string, number> = {};
+      (data || []).forEach((msg) => {
+        byFriend[msg.sender_id] = (byFriend[msg.sender_id] || 0) + 1;
+      });
+      const total = (data || []).length;
+      return { total, byFriend };
+    },
+  });
+
+  // Realtime: subscribe to ALL new DMs for current user
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel(`unread-dms-global-${user.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'direct_messages',
+        filter: `receiver_id=eq.${user.id}`,
+      }, () => {
+        queryClient.invalidateQueries({ queryKey: ['unread-dms', user.id] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id, queryClient]);
+
+  return query;
+}
+
+export function useMarkDMsRead() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: async (senderId: string) => {
+      if (!user) return;
+      const { error } = await supabase
+        .from('direct_messages')
+        .update({ is_read: true })
+        .eq('receiver_id', user.id)
+        .eq('sender_id', senderId)
+        .eq('is_read', false);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['unread-dms', user?.id] });
+    },
+  });
+}
+
 export interface GroupInviteMeta {
   group_id: string;
   is_host_invite: boolean;

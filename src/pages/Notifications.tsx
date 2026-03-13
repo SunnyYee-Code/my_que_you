@@ -5,7 +5,7 @@ import EmptyState from '@/components/shared/EmptyState';
 import LoadingState from '@/components/shared/LoadingState';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNotifications, useMarkNotificationRead } from '@/hooks/useNotifications';
-import { ArrowLeft, Bell, AlertTriangle, Star, Users } from 'lucide-react';
+import { ArrowLeft, Bell, AlertTriangle, Star, Users, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
@@ -16,6 +16,7 @@ const iconMap = {
   group_cancelled: AlertTriangle,
   credit_change: Star,
   review_received: Star,
+  direct_message: MessageCircle,
 };
 
 export default function NotificationsPage() {

@@ -3,12 +3,15 @@ import { Home, Plus, Bell, User, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUnreadCount } from '@/hooks/useNotifications';
+import { useUnreadDMCounts } from '@/hooks/useDirectMessages';
 import { cn } from '@/lib/utils';
 
 export default function MobileTabBar() {
   const location = useLocation();
   const { user } = useAuth();
   const unreadCount = useUnreadCount();
+  const { data: dmCounts } = useUnreadDMCounts();
+  const unreadDMs = dmCounts?.total ?? 0;
 
   const tabs = [
     { to: '/community', icon: Home, label: '社区' },
@@ -48,6 +51,9 @@ export default function MobileTabBar() {
                 <Badge className="absolute -top-0.5 right-0 h-4 min-w-4 px-1 text-[10px] bg-destructive text-destructive-foreground">
                   {unreadCount}
                 </Badge>
+              )}
+              {tab.label === '好友' && unreadDMs > 0 && (
+                <span className="absolute top-0 right-1 h-2 w-2 rounded-full bg-destructive" />
               )}
             </Link>
           );

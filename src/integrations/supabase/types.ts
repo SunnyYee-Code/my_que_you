@@ -152,6 +152,7 @@ export type Database = {
           content: string
           created_at: string
           id: string
+          is_read: boolean
           metadata: Json | null
           receiver_id: string
           sender_id: string
@@ -161,6 +162,7 @@ export type Database = {
           content: string
           created_at?: string
           id?: string
+          is_read?: boolean
           metadata?: Json | null
           receiver_id: string
           sender_id: string
@@ -170,6 +172,7 @@ export type Database = {
           content?: string
           created_at?: string
           id?: string
+          is_read?: boolean
           metadata?: Json | null
           receiver_id?: string
           sender_id?: string
@@ -963,6 +966,7 @@ export type Database = {
         | "review_received"
         | "friend_request"
         | "group_invitation"
+        | "direct_message"
       request_status: "PENDING" | "APPROVED" | "REJECTED"
     }
     CompositeTypes: {
@@ -1104,6 +1108,7 @@ export const Constants = {
         "review_received",
         "friend_request",
         "group_invitation",
+        "direct_message",
       ],
       request_status: ["PENDING", "APPROVED", "REJECTED"],
     },

@@ -6,7 +6,7 @@ import UserAvatar from '@/components/shared/UserAvatar';
 import LoadingState from '@/components/shared/LoadingState';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProfileById } from '@/hooks/useProfile';
-import { useDirectMessages, useSendDirectMessage, GroupInviteMeta } from '@/hooks/useDirectMessages';
+import { useDirectMessages, useSendDirectMessage, useMarkDMsRead, GroupInviteMeta } from '@/hooks/useDirectMessages';
 import { ArrowLeft, Send, MapPin, Clock, Users, Crown, LogIn, Clock4 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -207,8 +207,17 @@ export default function DirectChatPage() {
   const { data: friendProfile, isLoading: profileLoading } = useProfileById(friendId);
   const { data: messages = [], isLoading: msgLoading } = useDirectMessages(friendId);
   const sendMessage = useSendDirectMessage();
+  const markRead = useMarkDMsRead();
   const [input, setInput] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
+
+  // Mark messages as read when chat opens or new messages arrive
+  useEffect(() => {
+    if (friendId && messages.length > 0) {
+      markRead.mutate(friendId);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [friendId, messages.length]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });

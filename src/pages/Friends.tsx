@@ -11,6 +11,7 @@ import CreditBadge from '@/components/shared/CreditBadge';
 import LoadingState from '@/components/shared/LoadingState';
 import EmptyState from '@/components/shared/EmptyState';
 import { useFriends, useFriendRequests, useRespondFriendRequest, useDeleteFriend, useSearchUserByUid, useSendFriendRequest } from '@/hooks/useFriends';
+import { useUnreadDMCounts } from '@/hooks/useDirectMessages';
 import { MessageCircle, UserMinus, Check, X, Users, Search, UserPlus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
@@ -99,6 +100,9 @@ export default function FriendsPage() {
   const { user } = useAuth();
   const { data: friends = [], isLoading: friendsLoading } = useFriends();
   const { data: requests = [], isLoading: reqLoading } = useFriendRequests();
+  const { data: dmCounts } = useUnreadDMCounts();
+  const unreadByFriend = dmCounts?.byFriend ?? {};
+  const totalUnreadDMs = dmCounts?.total ?? 0;
   const respond = useRespondFriendRequest();
   const deleteFriend = useDeleteFriend();
   const searchByUid = useSearchUserByUid();
@@ -190,6 +194,11 @@ export default function FriendsPage() {
                       <p className="font-medium text-sm truncate">{f.profile.nickname}</p>
                       <CreditBadge score={f.profile.credit_score} />
                     </div>
+                    {unreadByFriend[f.profile.id] > 0 && (
+                      <Badge className="shrink-0 h-5 min-w-5 px-1.5 text-xs bg-destructive text-destructive-foreground">
+                        {unreadByFriend[f.profile.id]}
+                      </Badge>
+                    )}
                     <Button variant="ghost" size="icon" className="shrink-0" onClick={() => navigate(`/dm/${f.profile.id}`)}>
                       <MessageCircle className="h-4 w-4" />
                     </Button>
