@@ -1,0 +1,37 @@
+project_id = "bbieftoxalirijvuihir"
+
+[functions.validate-registration]
+verify_jwt = false
+
+[functions.check-group-limits]
+verify_jwt = false
+
+[functions.seed-test-data]
+verify_jwt = false
+
+[functions.admin-manage-user]
+verify_jwt = false
+
+[functions.lookup-email]
+verify_jwt = false
+
+[functions.auto-confirm-user]
+verify_jwt = false
+
+[functions.batch-create-users]
+verify_jwt = false
+
+[functions.auto-expire-groups]
+verify_jwt = false
+
+[functions.auto-release-requests]
+verify_jwt = false
+
+[functions.auto-clean-messages]
+verify_jwt = false
+
+[functions.send-email-otp]
+verify_jwt = false
+
+[functions.verify-email-otp]
+verify_jwt = false
