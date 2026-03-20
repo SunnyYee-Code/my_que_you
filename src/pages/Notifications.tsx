@@ -14,6 +14,7 @@ import { zhCN } from 'date-fns/locale';
 const iconMap = {
   application_update: Users,
   group_cancelled: AlertTriangle,
+  group_invitation: Users,
   credit_change: Star,
   review_received: Star,
   direct_message: MessageCircle,

@@ -171,6 +171,17 @@ export function useSendGroupInviteCard() {
           metadata: meta as any,
         });
       if (error) throw error;
+
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: receiverId,
+          type: 'group_invitation',
+          title: meta.is_host_invite ? '房主邀请你加入拼团' : '好友邀请你加入拼团',
+          content: `${meta.inviter_name} 邀请你加入拼团`,
+          link_to: `/group/${meta.group_id}`,
+        });
+      if (notificationError) throw notificationError;
     },
     onSuccess: (_, { receiverId }) => {
       queryClient.invalidateQueries({ queryKey: ['direct-messages', user?.id, receiverId] });
