@@ -102,6 +102,57 @@ npm run lint       # 代码检查
 npm test           # 运行测试
 ```
 
+## Agent Swarm Bootstrap
+
+仓库内置了一个最小可运行的 `.clawdbot/` 编排层，先服务于 Web 端仓库本身。
+
+### 本地配置
+
+默认读取 `.clawdbot/.env.local`。当前配置项示例见 `.clawdbot/.env.example`，其中：
+
+- `FEISHU_WEBHOOK_URL`：仅在任务达到完成条件时发送通知
+- `DEFAULT_BASE_BRANCH`：新 worktree 默认基于哪个分支创建
+- `DEFAULT_WORKTREE_DIR`：本地 worktree 目录，当前为 `.worktrees`
+
+### 准备 Prompt
+
+将任务 Prompt 放到 `.clawdbot/prompts/<task>.md`，例如：
+
+```bash
+mkdir -p .clawdbot/prompts
+cat > .clawdbot/prompts/invite-flow.md <<'EOF'
+Fix the invite flow bug and open a PR when local checks pass.
+EOF
+```
+
+### 启动 Agent
+
+```bash
+bash .clawdbot/run-agent.sh invite-flow codex .clawdbot/prompts/invite-flow.md
+```
+
+如需仅生成 worktree、任务记录和启动命令，不实际拉起 Agent：
+
+```bash
+DRY_RUN=1 bash .clawdbot/run-agent.sh invite-flow codex .clawdbot/prompts/invite-flow.md
+```
+
+### 巡检任务状态
+
+```bash
+bash .clawdbot/check-agents.sh
+```
+
+当前最小版完成条件为：
+
+- 对应 worktree 和分支存在
+- 能查到对应 PR
+- `npm run lint`
+- `npm run build`
+- `npm run test`
+
+当以上条件同时满足时，会通过飞书 webhook 推送通知。
+
 ## 数据库主要表
 
 | 表名            | 用途     |

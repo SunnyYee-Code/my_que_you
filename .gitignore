@@ -15,6 +15,9 @@ dist-ssr
 */.temp/*
 
 .env
+.clawdbot/.env.local
+.worktrees/
+.clawdbot/logs/
 
 # Editor directories and files
 .vscode/*
@@ -26,5 +29,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
-
