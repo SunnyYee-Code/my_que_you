@@ -124,6 +124,20 @@ describe('GroupCreatePage', () => {
     expect(await screen.findByText('结束时间必须晚于开始时间')).toBeInTheDocument();
   });
 
+
+  it('shows max duration validation when duration exceeds limit', async () => {
+    renderPage();
+    const user = userEvent.setup();
+    const now = new Date();
+    const start = new Date(now.getTime() + 60 * 60 * 1000);
+    const end = new Date(now.getTime() + 26 * 60 * 60 * 1000);
+    const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const [startInput, endInput] = getDatetimeInputs();
+    await user.type(startInput, fmt(start));
+    await user.type(endInput, fmt(end));
+    expect(await screen.findByText('持续时间不能超过24小时')).toBeInTheDocument();
+  });
+
   it('blocks submission when daily create limit is exceeded', async () => {
     queryState.dailyLimitCheck = { allowed: false, current: 5, limit: 5, message: '今日创建团数已达上限' };
     renderPage();
@@ -134,6 +148,20 @@ describe('GroupCreatePage', () => {
     queryState.activeHostingData = [{ id: 'g1', address: '老地方', status: 'OPEN' }];
     renderPage();
     expect(screen.getByText('创建拼团')).toBeInTheDocument();
+  });
+
+
+  it('keeps publish button disabled when required location or play style is missing', async () => {
+    renderPage();
+    const user = userEvent.setup();
+    const now = new Date();
+    const start = new Date(now.getTime() + 60 * 60 * 1000);
+    const end = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+    const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const [startInput, endInput] = getDatetimeInputs();
+    await user.type(startInput, fmt(start));
+    await user.type(endInput, fmt(end));
+    expect(screen.getByRole('button', { name: '预览并发布' })).toBeDisabled();
   });
 
   it('validates banned words before creating group', async () => {

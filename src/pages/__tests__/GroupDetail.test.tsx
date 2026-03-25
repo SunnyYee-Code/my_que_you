@@ -131,6 +131,16 @@ describe('GroupDetailPage', () => {
     expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '申请已提交' }));
   });
 
+
+  it('renders group detail summary and members', () => {
+    renderPage();
+    expect(screen.getByText('测试牌馆')).toBeInTheDocument();
+    expect(screen.getByText(/已入团成员 \(3\/4\)/)).toBeInTheDocument();
+    expect(screen.getAllByText('房主').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('成员A').length).toBeGreaterThan(0);
+    expect(screen.getByText('血战到底')).toBeInTheDocument();
+  });
+
   it('requires leave reason within 60 minutes and deducts credit after leaving', async () => {
     renderPage();
     const user = userEvent.setup();
@@ -167,5 +177,15 @@ describe('GroupDetailPage', () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /导航/ }));
     expect(openSpy).toHaveBeenCalledWith(expect.stringContaining('uri.amap.com/marker'), '_blank');
+  });
+
+  it('lets host cancel group', async () => {
+    authState.user = { id: 'host-1' };
+    renderPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: '取消拼团' }));
+    await user.click(await screen.findByRole('button', { name: '确认取消' }));
+    await waitFor(() => expect(supabaseCalls.some(c => c.table === 'groups' && c.action === 'update' && c.payload.status === 'CANCELLED')).toBe(true));
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '拼团已取消' }));
   });
 });

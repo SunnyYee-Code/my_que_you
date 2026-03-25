@@ -98,6 +98,23 @@ describe('LoginPage', () => {
     });
   });
 
+  it('resolves phone number to email before password login', async () => {
+    invokeMock.mockResolvedValueOnce({ data: { email: 'phone@example.com', user_id: 'u2' }, error: null });
+    signInWithPasswordMock.mockResolvedValueOnce({ error: null });
+
+    renderPage();
+    fireEvent.click(screen.getByLabelText('agree-login'));
+    fireEvent.change(screen.getByPlaceholderText('请输入手机号、用户名或邮箱'), { target: { value: '13800138000' } });
+    fireEvent.change(screen.getByPlaceholderText('请输入密码'), { target: { value: '123456' } });
+    fireEvent.click(screen.getAllByRole('button', { name: '登录' })[1]);
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('lookup-email', { body: { phone: '13800138000' } });
+      expect(signInWithPasswordMock).toHaveBeenCalledWith({ email: 'phone@example.com', password: '123456' });
+      expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '登录成功' }));
+    });
+  });
+
   it('keeps register submit disabled until agreement is checked', () => {
     renderPage();
     fireEvent.click(screen.getAllByRole('button', { name: '注册' })[0]);

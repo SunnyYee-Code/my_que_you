@@ -79,8 +79,8 @@ function makeGroup(overrides: Record<string, any>) {
     address: overrides.address ?? overrides.id,
     start_time: overrides.start_time ?? '2026-03-26T10:00:00+08:00',
     status: overrides.status ?? 'OPEN',
-    latitude: overrides.latitude ?? 30.2741,
-    longitude: overrides.longitude ?? 120.1551,
+    latitude: overrides.latitude !== undefined ? overrides.latitude : 30.2741,
+    longitude: overrides.longitude !== undefined ? overrides.longitude : 120.1551,
     needed_slots: overrides.needed_slots ?? 2,
     total_slots: overrides.total_slots ?? 4,
     host: { nickname: overrides.hostName ?? '房主A' },
@@ -151,6 +151,71 @@ describe('IndexPage', () => {
 
     await waitFor(() => {
       expect(mockRequestLocation).toHaveBeenCalled();
+    });
+  });
+
+  it('sorts groups with missing distance to the bottom when sorting by distance', async () => {
+    renderPage();
+
+    fireEvent.click(screen.getAllByRole('combobox')[1]);
+    const listboxes = await screen.findAllByRole('listbox');
+    fireEvent.click(within(listboxes[listboxes.length - 1]).getByText('距离最近'));
+
+    await waitFor(() => {
+      const cards = Array.from(document.querySelectorAll('.animate-fade-in')) as HTMLElement[];
+      expect(cards.at(-1)?.textContent).toContain('无坐标局');
+    });
+  });
+
+  it('refreshes group list when city changes', () => {
+    const { rerender } = render(
+      <MemoryRouter>
+        <IndexPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('近处招募中')).toBeInTheDocument();
+    currentCity = { id: 'cd', name: '成都' };
+    groupsData = [
+      makeGroup({ id: 'chengdu-group', address: '成都牌局', latitude: 30.67, longitude: 104.06 }),
+    ];
+
+    rerender(
+      <MemoryRouter>
+        <IndexPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('成都牌局')).toBeInTheDocument();
+    expect(screen.queryByText('近处招募中')).not.toBeInTheDocument();
+  });
+
+  it('shows toast when distance filter needs location but geolocation fails', async () => {
+    positionData = null;
+    geoError = '';
+    const { rerender } = render(
+      <MemoryRouter>
+        <IndexPage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getAllByRole('combobox')[0]);
+    const listboxes = await screen.findAllByRole('listbox');
+    fireEvent.click(within(listboxes[listboxes.length - 1]).getByText('3km内'));
+
+    geoError = '定位权限被拒绝';
+    rerender(
+      <MemoryRouter>
+        <IndexPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({
+        title: '定位失败',
+        description: '定位权限被拒绝',
+        variant: 'destructive',
+      }));
     });
   });
 });

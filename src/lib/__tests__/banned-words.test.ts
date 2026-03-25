@@ -52,4 +52,19 @@ describe('banned-words', () => {
     await expect(loadBannedWords()).resolves.toEqual(['新词']);
     expect(fromMock).toHaveBeenCalledTimes(2);
   });
+
+  it('validates newly added banned words after cache invalidation', async () => {
+    const selectMock = vi
+      .fn()
+      .mockResolvedValueOnce({ data: [{ word: '旧词' }] })
+      .mockResolvedValueOnce({ data: [{ word: '新词' }] });
+    fromMock.mockReturnValue({ select: selectMock });
+
+    await expect(validateNoBannedWords('这里有旧词')).resolves.toContain('旧词');
+    await expect(validateNoBannedWords('这里有新词')).resolves.toBeNull();
+
+    invalidateBannedWordsCache();
+
+    await expect(validateNoBannedWords('这里有新词')).resolves.toContain('新词');
+  });
 });

@@ -88,4 +88,27 @@ describe('DirectChatPage', () => {
     expect(sendMessageMock).not.toHaveBeenCalled();
     expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '包含违禁词', variant: 'destructive' }));
   });
+
+  it('renders host invite card and enter button for approved invitation', async () => {
+    directState.data = [{
+      id: 'invite-1',
+      sender_id: 'friend-1',
+      content: '邀请你来',
+      created_at: new Date().toISOString(),
+      type: 'group_invite',
+      metadata: {
+        group_id: 'group-1',
+        inviter_name: '好友',
+        group_address: '天府店',
+        group_start_time: '2026-03-26T10:00:00+08:00',
+        total_slots: 4,
+        needed_slots: 1,
+        is_host_invite: true,
+      },
+    }];
+    renderPage();
+    expect(await screen.findByText('房主邀请你加入')).toBeInTheDocument();
+    expect(screen.getByText('天府店')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '查看拼团' })).toBeInTheDocument();
+  });
 });
