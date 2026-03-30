@@ -1,9 +1,10 @@
-import { useState, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
 import AppLayout from '@/components/layout/AppLayout';
 import UserAvatar from '@/components/shared/UserAvatar';
@@ -11,7 +12,11 @@ import CreditBadge from '@/components/shared/CreditBadge';
 import LoadingState from '@/components/shared/LoadingState';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUpdateProfile, useCreditHistory } from '@/hooks/useProfile';
+import { useCancelRealNameVerification, useRealNameVerification, useSubmitRealNameVerification } from '@/hooks/useRealNameVerification';
+import { useAccountDeletionStatus, useApplyAccountDeletion, useCancelAccountDeletion } from '@/hooks/useAccountDeletion';
+import { ACCOUNT_DELETION_STATUS, DEFAULT_ACCOUNT_DELETION_SNAPSHOT } from '@/constants/accountDeletion';
 import { useToast } from '@/hooks/use-toast';
+import { buildRealNameViewModel, getRealNameStatusActions, REAL_NAME_COPY } from '@/constants/realName';
 import { supabase } from '@/integrations/supabase/client';
 import { ArrowLeft, AlertTriangle, Shield, Camera, User, Phone, Calendar, Lock } from 'lucide-react';
 import { format } from 'date-fns';
@@ -21,8 +26,17 @@ export default function SettingsPage() {
   const { user, profile, signOut, refreshProfile, loading: authLoading, isTest } = useAuth();
   const { toast } = useToast();
   const { data: creditHistory = [], isLoading } = useCreditHistory(user?.id);
+  const { data: accountDeletionStatus = DEFAULT_ACCOUNT_DELETION_SNAPSHOT, isLoading: deletionStatusLoading } = useAccountDeletionStatus();
+  const applyAccountDeletion = useApplyAccountDeletion();
+  const cancelAccountDeletion = useCancelAccountDeletion();
   const updateProfile = useUpdateProfile();
+  const { data: realNameSnapshot, isLoading: realNameLoading } = useRealNameVerification();
+  const submitRealNameVerification = useSubmitRealNameVerification();
+  const cancelRealNameVerification = useCancelRealNameVerification();
   const [appealReason, setAppealReason] = useState('');
+  const [realName, setRealName] = useState('');
+  const [idNumber, setIdNumber] = useState('');
+  const [consentChecked, setConsentChecked] = useState(false);
   const [nickname, setNickname] = useState(profile?.nickname || '');
   const [isUploading, setIsUploading] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -31,12 +45,109 @@ export default function SettingsPage() {
   const [changingPassword, setChangingPassword] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  if (authLoading || isLoading) return <AppLayout><LoadingState /></AppLayout>;
+  if (authLoading || isLoading || deletionStatusLoading || realNameLoading) return <AppLayout><LoadingState /></AppLayout>;
 
   if (!user || !profile) {
     navigate('/login');
     return null;
   }
+
+
+  const realNameViewModel = useMemo(() => buildRealNameViewModel(realNameSnapshot), [realNameSnapshot]);
+  const realNameActions = useMemo(() => getRealNameStatusActions(realNameSnapshot), [realNameSnapshot]);
+
+  const handleSubmitRealName = async () => {
+    if (!realName.trim() || !idNumber.trim()) {
+      toast({ title: '请补全实名认证信息', description: '真实姓名和身份证号均为必填项', variant: 'destructive' });
+      return;
+    }
+    if (!consentChecked) {
+      toast({ title: '请先勾选认证授权', description: '勾选授权后才能提交实名认证', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      await submitRealNameVerification.mutateAsync({
+        real_name: realName.trim(),
+        id_number: idNumber.trim(),
+        consent_checked: consentChecked,
+      });
+      toast({ title: REAL_NAME_COPY.submitSuccessTitle, description: REAL_NAME_COPY.submitSuccessDescription });
+    } catch (error: any) {
+      toast({ title: '实名认证提交失败', description: error.message || '请稍后重试', variant: 'destructive' });
+    }
+  };
+
+  const handleCancelRealName = async () => {
+    try {
+      await cancelRealNameVerification.mutateAsync();
+      toast({ title: REAL_NAME_COPY.cancelSuccessTitle, description: REAL_NAME_COPY.cancelSuccessDescription });
+    } catch (error: any) {
+      toast({ title: '撤销失败', description: error.message || '请稍后重试', variant: 'destructive' });
+    }
+  };
+
+  const deletionStatusMeta = useMemo(() => {
+    switch (accountDeletionStatus.applyStatus) {
+      case ACCOUNT_DELETION_STATUS.COOLING_OFF:
+        return {
+          title: '账号注销冷静期中',
+          description: accountDeletionStatus.coolingOffExpireAt
+            ? `冷静期截止：${format(new Date(accountDeletionStatus.coolingOffExpireAt), 'yyyy-MM-dd HH:mm')}`
+            : '系统将在冷静期结束后继续处理注销。',
+          tone: 'warning',
+        } as const;
+      case ACCOUNT_DELETION_STATUS.PROCESSING:
+        return {
+          title: '账号注销处理中',
+          description: '系统正在处理账号数据，请留意站内通知。',
+          tone: 'info',
+        } as const;
+      case ACCOUNT_DELETION_STATUS.COMPLETED:
+        return {
+          title: '账号已完成注销',
+          description: accountDeletionStatus.resultReason || '账号已进入注销完成状态。',
+          tone: 'success',
+        } as const;
+      case ACCOUNT_DELETION_STATUS.CANCELLED:
+        return {
+          title: '已撤销注销申请',
+          description: accountDeletionStatus.resultReason || '你可以继续正常使用账号。',
+          tone: 'info',
+        } as const;
+      case ACCOUNT_DELETION_STATUS.REJECTED:
+        return {
+          title: '注销申请未通过',
+          description: accountDeletionStatus.resultReason || '请根据提示处理后重新申请。',
+          tone: 'danger',
+        } as const;
+      default:
+        return {
+          title: '账号状态正常',
+          description: '如确认不再使用，可发起账号注销申请。',
+          tone: 'default',
+        } as const;
+    }
+  }, [accountDeletionStatus]);
+
+  const shouldShowDeletionApplyEntry = ![
+    ACCOUNT_DELETION_STATUS.COOLING_OFF,
+    ACCOUNT_DELETION_STATUS.PROCESSING,
+    ACCOUNT_DELETION_STATUS.COMPLETED,
+  ].includes(accountDeletionStatus.applyStatus);
+
+  useEffect(() => {
+    if (accountDeletionStatus.applyStatus !== ACCOUNT_DELETION_STATUS.COMPLETED) return;
+
+    void (async () => {
+      toast({
+        title: '账号已注销',
+        description: '当前登录态已失效，请使用其他账号重新登录。',
+      });
+      await signOut();
+      navigate('/login');
+    })();
+  }, [accountDeletionStatus.applyStatus, navigate, signOut, toast]);
 
   const appealableHistory = creditHistory.filter(ch => ch.can_appeal && ch.change < 0 && !ch.appeal_status);
 
@@ -81,7 +192,45 @@ export default function SettingsPage() {
       toast({ title: '测试账号不允许注销', variant: 'destructive' });
       return;
     }
-    toast({ title: '账号注销请求已提交', description: '我们会在7个工作日内处理' });
+
+    if (!accountDeletionStatus.canOperate) {
+      toast({
+        title: '当前无法发起注销',
+        description: accountDeletionStatus.forbiddenReason || '请稍后重试',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      await applyAccountDeletion.mutateAsync();
+      toast({
+        title: '注销申请已提交',
+        description: '账号已进入冷静期，请在到期前确认是否撤销。',
+      });
+    } catch (err: any) {
+      toast({
+        title: '注销申请提交失败',
+        description: err?.message || '请稍后重试',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleCancelDeactivate = async () => {
+    try {
+      await cancelAccountDeletion.mutateAsync();
+      toast({
+        title: '已撤销注销申请',
+        description: '你的账号状态已恢复正常。',
+      });
+    } catch (err: any) {
+      toast({
+        title: '撤销注销失败',
+        description: err?.message || '请稍后重试',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleAppeal = async (creditId: string) => {
@@ -231,6 +380,75 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Shield className="h-4 w-4 text-primary" /> {REAL_NAME_COPY.sectionTitle}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm text-muted-foreground">{REAL_NAME_COPY.statusLabel}</span>
+                <span className="text-sm font-medium">{realNameViewModel.badgeText}</span>
+              </div>
+              <p className="text-sm text-muted-foreground">{realNameViewModel.description}</p>
+              {realNameViewModel.lastSubmittedAt && (
+                <p className="text-xs text-muted-foreground">{REAL_NAME_COPY.submittedAtLabel}：{format(new Date(realNameViewModel.lastSubmittedAt), 'yyyy-MM-dd HH:mm')}</p>
+              )}
+              {realNameViewModel.verifiedAt && (
+                <p className="text-xs text-muted-foreground">{REAL_NAME_COPY.verifiedAtLabel}：{format(new Date(realNameViewModel.verifiedAt), 'yyyy-MM-dd HH:mm')}</p>
+              )}
+              {realNameViewModel.rejectReasonText && (
+                <p className="text-xs text-destructive">{REAL_NAME_COPY.rejectReasonLabel}：{realNameViewModel.rejectReasonText}</p>
+              )}
+            </div>
+
+            {realNameActions.showSubmitForm && (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">{REAL_NAME_COPY.formDescription}</p>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{REAL_NAME_COPY.realNameLabel}</label>
+                  <Input value={realName} onChange={(e) => setRealName(e.target.value)} placeholder={REAL_NAME_COPY.realNamePlaceholder} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{REAL_NAME_COPY.idNumberLabel}</label>
+                  <Input value={idNumber} onChange={(e) => setIdNumber(e.target.value)} placeholder={REAL_NAME_COPY.idNumberPlaceholder} />
+                </div>
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Checkbox checked={consentChecked} onCheckedChange={(checked) => setConsentChecked(Boolean(checked))} />
+                  <span>{REAL_NAME_COPY.consentLabel}</span>
+                </label>
+                <Button
+                  type="button"
+                  onClick={handleSubmitRealName}
+                  disabled={submitRealNameVerification.isPending || (!realNameViewModel.canSubmit && !realNameViewModel.canResubmit)}
+                >
+                  {realNameActions.primaryLabel}
+                </Button>
+              </div>
+            )}
+
+            {!realNameActions.showSubmitForm && (
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" disabled>
+                  {realNameActions.primaryLabel}
+                </Button>
+                {realNameViewModel.canCancel && realNameActions.allowCancel && (
+                  <Button type="button" variant="outline" onClick={handleCancelRealName} disabled={cancelRealNameVerification.isPending}>
+                    撤销申请
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {realNameViewModel.status === 'rejected' && realNameViewModel.canResubmit && realNameActions.allowResubmit && (
+              <p className="text-xs text-muted-foreground">请根据驳回原因修正信息后重新提交。</p>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Credit appeal */}
         <Card>
           <CardHeader>
@@ -337,19 +555,62 @@ export default function SettingsPage() {
               <AlertTriangle className="h-4 w-4" /> 危险操作
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="destructive" className="w-full">注销账号</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader><DialogTitle>确认注销账号？</DialogTitle></DialogHeader>
-                <p className="text-sm text-muted-foreground">注销后所有数据将被删除且无法恢复。如有进行中的拼团，请先完成或取消。</p>
-                <DialogFooter>
-                  <Button variant="destructive" onClick={handleDeactivate}>确认注销</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+          <CardContent className="space-y-4">
+            <div
+              className="rounded-lg border p-4"
+              data-tone={deletionStatusMeta.tone}
+            >
+              <p className="text-sm font-medium">{deletionStatusMeta.title}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{deletionStatusMeta.description}</p>
+              {accountDeletionStatus.forbiddenReason && (
+                <p className="mt-2 text-sm text-destructive">{accountDeletionStatus.forbiddenReason}</p>
+              )}
+            </div>
+
+            <div className="rounded-lg bg-muted/50 p-4 text-sm text-muted-foreground space-y-2">
+              <p className="font-medium text-foreground">注销前须知</p>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>提交申请后将进入冷静期，冷静期内可撤销申请。</li>
+                <li>冷静期结束后，系统会根据后端状态继续处理账号注销。</li>
+                <li>如后端返回限制原因，请先处理相关问题后再尝试。</li>
+              </ul>
+            </div>
+
+            {accountDeletionStatus.applyStatus === ACCOUNT_DELETION_STATUS.COOLING_OFF ? (
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleCancelDeactivate}
+                disabled={cancelAccountDeletion.isPending}
+              >
+                {cancelAccountDeletion.isPending ? '撤销中...' : '撤销注销申请'}
+              </Button>
+            ) : shouldShowDeletionApplyEntry ? (
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button
+                    variant="destructive"
+                    className="w-full"
+                    disabled={!accountDeletionStatus.canOperate || applyAccountDeletion.isPending}
+                  >
+                    {applyAccountDeletion.isPending ? '提交中...' : '注销账号'}
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader><DialogTitle>确认注销账号？</DialogTitle></DialogHeader>
+                  <p className="text-sm text-muted-foreground">注销后系统将按后端状态流转处理账号与数据。如有进行中的拼团，请先完成或取消。</p>
+                  <DialogFooter>
+                    <Button
+                      variant="destructive"
+                      onClick={handleDeactivate}
+                      disabled={!accountDeletionStatus.canOperate || applyAccountDeletion.isPending}
+                    >
+                      {applyAccountDeletion.isPending ? '提交中...' : '确认注销'}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            ) : null}
           </CardContent>
         </Card>
         )}

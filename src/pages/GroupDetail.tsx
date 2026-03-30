@@ -7,8 +7,10 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import CreditBadge from '@/components/shared/CreditBadge';
 import UserAvatar from '@/components/shared/UserAvatar';
 import LoadingState from '@/components/shared/LoadingState';
+import RealNameRestrictionGuard from '@/components/shared/RealNameRestrictionGuard';
 import ReportDialog from '@/components/shared/ReportDialog';
 import { useGroupDetail } from '@/hooks/useGroups';
+import { useRealNameVerification } from '@/hooks/useRealNameVerification';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { ArrowLeft, MapPin, Clock, Users, Navigation, MessageCircle, AlertTriangle, Crown, ChevronRight, HelpCircle, UserMinus } from 'lucide-react';
@@ -21,6 +23,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import AddFriendButton from '@/components/friends/AddFriendButton';
 import InviteFriendsDialog from '@/components/friends/InviteFriendsDialog';
+import { REAL_NAME_SCENES } from '@/constants/realName';
+import {
+  createDefaultRealNameSnapshot,
+  shouldBlockByRestrictionLevel,
+  shouldShowRealNameGuard,
+} from '@/lib/real-name-verification';
 
 export default function GroupDetailPage() {
   const [kickDialogOpen, setKickDialogOpen] = useState(false);
@@ -34,6 +42,7 @@ export default function GroupDetailPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { data: group, isLoading } = useGroupDetail(id);
+  const { data: realNameSnapshot, isLoading: realNameLoading, isError: realNameError } = useRealNameVerification();
 
   const { data: myApp } = useQuery({
     queryKey: ['my-application', id, user?.id],
@@ -80,9 +89,28 @@ export default function GroupDetailPage() {
   const endDate = new Date(group.end_time);
   const isUpcoming = startDate > new Date();
   const emptySlots = group.needed_slots;
+  const effectiveRealNameSnapshot = user
+    ? (realNameSnapshot ?? (realNameError
+        ? {
+            ...createDefaultRealNameSnapshot(),
+            restriction_level: 'blocked',
+            restriction_scenes: [REAL_NAME_SCENES.GROUP_JOIN],
+          }
+        : null))
+    : null;
+  const showJoinRealNameGuard = user && effectiveRealNameSnapshot
+    ? shouldShowRealNameGuard(effectiveRealNameSnapshot, REAL_NAME_SCENES.GROUP_JOIN)
+    : false;
+  const blockJoinByRealName = showJoinRealNameGuard && effectiveRealNameSnapshot
+    ? shouldBlockByRestrictionLevel(effectiveRealNameSnapshot.restriction_level)
+    : false;
 
   const handleApply = async () => {
     if (!user) { navigate('/login'); return; }
+    if (blockJoinByRealName) {
+      toast({ title: '请先完成实名认证', description: '当前场景需先完成实名认证后继续。', variant: 'destructive' });
+      return;
+    }
     try {
       const { error } = await supabase.from('join_requests').insert({
         group_id: group.id, user_id: user.id, host_id: group.host_id,
@@ -369,6 +397,10 @@ export default function GroupDetailPage() {
 
         {/* Actions */}
         <div className="space-y-2 pb-4">
+          {!isMember && !isHost && group.status === 'OPEN' && user && !realNameLoading && effectiveRealNameSnapshot && showJoinRealNameGuard && (
+            <RealNameRestrictionGuard snapshot={effectiveRealNameSnapshot} scene={REAL_NAME_SCENES.GROUP_JOIN} />
+          )}
+
           {(group.status === 'OPEN' || group.status === 'FULL') && (isMember || isHost) && (
             <>
               <Button variant="outline" className="w-full gap-2" onClick={() => navigate(`/group/${group.id}/chat`)}>
@@ -412,7 +444,7 @@ export default function GroupDetailPage() {
                 申请状态：<span className="font-semibold text-[hsl(var(--status-full))]">等待审核</span>
               </div>
             ) : (
-              <Button className="w-full text-base h-11" onClick={handleApply}>申请加入</Button>
+              <Button className="w-full text-base h-11" onClick={handleApply} disabled={blockJoinByRealName}>申请加入</Button>
             )
           )}
 

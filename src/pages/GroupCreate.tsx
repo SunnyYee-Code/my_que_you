@@ -9,15 +9,23 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import AppLayout from '@/components/layout/AppLayout';
 import AmapLocationPicker from '@/components/map/AmapLocationPicker';
 import LoadingState from '@/components/shared/LoadingState';
+import RealNameRestrictionGuard from '@/components/shared/RealNameRestrictionGuard';
 import { useCity } from '@/contexts/CityContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCreateGroup } from '@/hooks/useGroups';
+import { useRealNameVerification } from '@/hooks/useRealNameVerification';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { ArrowLeft, Calendar, MapPin, Users, FileText, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { validateNoBannedWords } from '@/lib/banned-words';
 import { useQuery } from '@tanstack/react-query';
+import { REAL_NAME_SCENES } from '@/constants/realName';
+import {
+  createDefaultRealNameSnapshot,
+  shouldBlockByRestrictionLevel,
+  shouldShowRealNameGuard,
+} from '@/lib/real-name-verification';
 
 const PLAY_STYLES = [
   '血战到底', '血流成河', '北京麻将', '国标麻将',
@@ -31,6 +39,7 @@ export default function GroupCreatePage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const createGroup = useCreateGroup();
+  const { data: realNameSnapshot, isLoading: realNameLoading, isError: realNameError } = useRealNameVerification();
 
   // Fetch user's time limits from profile
   const { data: timeLimits } = useQuery({
@@ -123,11 +132,26 @@ export default function GroupCreatePage() {
     },
   });
 
+  if (realNameLoading) return <AppLayout><LoadingState /></AppLayout>;
+
   if (!user) {
     navigate('/login');
     return null;
   }
 
+  const effectiveRealNameSnapshot = (realNameSnapshot ?? (realNameError
+    ? {
+        ...createDefaultRealNameSnapshot(),
+        restriction_level: 'blocked',
+        restriction_scenes: [REAL_NAME_SCENES.GROUP_CREATE],
+      }
+    : null));
+  const showRealNameGuard = effectiveRealNameSnapshot
+    ? shouldShowRealNameGuard(effectiveRealNameSnapshot, REAL_NAME_SCENES.GROUP_CREATE)
+    : false;
+  const blockByRealName = effectiveRealNameSnapshot
+    ? showRealNameGuard && shouldBlockByRestrictionLevel(effectiveRealNameSnapshot.restriction_level)
+    : false;
   const hasConflict = activeCheck?.hasHosting || activeCheck?.hasParticipating;
   const dailyLimitExceeded = dailyLimitCheck && !dailyLimitCheck.allowed;
   // Time validation
@@ -152,7 +176,7 @@ export default function GroupCreatePage() {
     return '';
   })();
 
-  const canSubmit = startTime && endTime && address.trim() && (playStyle || customStyle.trim()) && !hasConflict && !dailyLimitExceeded && timeValid;
+  const canSubmit = startTime && endTime && address.trim() && (playStyle || customStyle.trim()) && !hasConflict && !dailyLimitExceeded && !blockByRealName && timeValid;
 
   const handleLocationSelect = (loc: { address: string; lat: number; lng: number }) => {
     setAddress(loc.address);
@@ -163,6 +187,10 @@ export default function GroupCreatePage() {
   const finalPlayStyle = playStyle === '其他' ? customStyle.trim() : (playStyle || customStyle.trim());
 
   const handleSubmit = async () => {
+    if (blockByRealName) {
+      toast({ title: '请先完成实名认证', description: '当前场景需先完成实名认证后继续。', variant: 'destructive' });
+      return;
+    }
     if (hasConflict) {
       toast({ title: '你还有未结束的拼团', variant: 'destructive' });
       return;
@@ -214,6 +242,10 @@ export default function GroupCreatePage() {
         </div>
 
         {/* Daily limit warning */}
+        {effectiveRealNameSnapshot && showRealNameGuard && (
+          <RealNameRestrictionGuard snapshot={effectiveRealNameSnapshot} scene={REAL_NAME_SCENES.GROUP_CREATE} />
+        )}
+
         {!checkingDailyLimit && dailyLimitExceeded && (
           <Card className="border-[hsl(var(--status-full))/0.4] bg-[hsl(var(--status-full)/0.06)]">
             <CardContent className="p-4 flex items-start gap-3">
