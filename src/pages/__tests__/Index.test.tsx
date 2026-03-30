@@ -9,13 +9,33 @@ const mockToast = vi.fn();
 const mockQuickJoinMutate = vi.fn();
 const mockRequestLocation = vi.fn();
 
-let currentUser: any = { id: 'user-1' };
+type TestUser = { id: string } | null;
+type TestCity = { id: string; name: string };
+type TestPosition = { lat: number; lng: number } | null;
+type JoinStatus = { isMember?: boolean; isPending?: boolean };
+type TestGroup = {
+  id: string;
+  host_id?: string;
+  address?: string;
+  start_time?: string;
+  status?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  needed_slots?: number;
+  total_slots?: number;
+  play_style?: string | null;
+  hostName?: string;
+  members?: Array<{ user_id: string }>;
+};
+
+let currentUser: TestUser = { id: 'user-1' };
 let currentCity = { id: 'hz', name: '杭州' };
-let groupsData: any[] = [];
-let positionData: any = null;
+let groupsData: TestGroup[] = [];
+let positionData: TestPosition = null;
 let geoError = '';
 let geoLoading = false;
-let joinStatuses: Record<string, any> = {};
+let joinStatuses: Record<string, JoinStatus> = {};
+let myGroupsData = { hosted: [] as TestGroup[], joined: [] as TestGroup[] };
 
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
@@ -25,12 +45,12 @@ vi.mock('react-router-dom', async () => {
   };
 });
 
-vi.mock('@/components/layout/AppLayout', () => ({ default: ({ children }: any) => <div>{children}</div> }));
+vi.mock('@/components/layout/AppLayout', () => ({ default: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 vi.mock('@/components/layout/CitySearchSelect', () => ({ default: () => <div data-testid="city-select" /> }));
-vi.mock('@/components/shared/StatusBadge', () => ({ default: ({ status }: any) => <span>{status}</span> }));
-vi.mock('@/components/shared/CreditBadge', () => ({ default: ({ score }: any) => <span>信用{score}</span> }));
-vi.mock('@/components/shared/UserAvatar', () => ({ default: ({ nickname }: any) => <span>{nickname}</span> }));
-vi.mock('@/components/shared/EmptyState', () => ({ default: ({ title, description }: any) => <div>{title}-{description}</div> }));
+vi.mock('@/components/shared/StatusBadge', () => ({ default: ({ status }: { status: string }) => <span>{status}</span> }));
+vi.mock('@/components/shared/CreditBadge', () => ({ default: ({ score }: { score: number }) => <span>信用{score}</span> }));
+vi.mock('@/components/shared/UserAvatar', () => ({ default: ({ nickname }: { nickname: string }) => <span>{nickname}</span> }));
+vi.mock('@/components/shared/EmptyState', () => ({ default: ({ title, description }: { title: string; description: string }) => <div>{title}-{description}</div> }));
 vi.mock('@/components/shared/LoadingState', () => ({ default: () => <div>loading...</div> }));
 
 vi.mock('@/contexts/CityContext', () => ({
@@ -47,6 +67,10 @@ vi.mock('@/hooks/useGroups', () => ({
     isLoading: false,
     refetch: vi.fn(),
     isFetching: false,
+  }),
+  useMyGroups: () => ({
+    data: myGroupsData,
+    isLoading: false,
   }),
 }));
 
@@ -72,7 +96,7 @@ vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
-function makeGroup(overrides: Record<string, any>) {
+function makeGroup(overrides: TestGroup) {
   return {
     id: overrides.id,
     host_id: overrides.host_id ?? 'host-1',
@@ -83,6 +107,7 @@ function makeGroup(overrides: Record<string, any>) {
     longitude: overrides.longitude !== undefined ? overrides.longitude : 120.1551,
     needed_slots: overrides.needed_slots ?? 2,
     total_slots: overrides.total_slots ?? 4,
+    play_style: overrides.play_style ?? null,
     host: { nickname: overrides.hostName ?? '房主A' },
     members: overrides.members ?? [],
   };
@@ -104,6 +129,7 @@ describe('IndexPage', () => {
     geoError = '';
     geoLoading = false;
     joinStatuses = {};
+    myGroupsData = { hosted: [], joined: [] };
     groupsData = [
       makeGroup({ id: 'open-near', address: '近处招募中', latitude: 30.2741, longitude: 120.1551, start_time: '2026-03-26T09:00:00+08:00' }),
       makeGroup({ id: 'open-far', address: '远处招募中', latitude: 30.35, longitude: 120.35, start_time: '2026-03-26T11:00:00+08:00' }),
@@ -287,5 +313,102 @@ describe('IndexPage', () => {
     await user.click(screen.getByRole('button', { name: '加入' }));
 
     expect(mockNavigate).toHaveBeenCalledWith('/login');
+  });
+
+  it('uses recommended ranking by default and boosts groups matching user preference', () => {
+    const fourHoursLater = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
+    const fiveHoursLater = new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString();
+    const sixHoursLater = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
+
+    myGroupsData = {
+      hosted: [],
+      joined: [
+        makeGroup({
+          id: 'history-completed',
+          status: 'COMPLETED',
+          play_style: '血战到底',
+          members: [{ user_id: 'user-1' }],
+        }),
+      ],
+    };
+
+    groupsData = [
+      makeGroup({
+        id: 'history-self',
+        address: '我的历史偏好局',
+        status: 'FULL',
+        play_style: '血战到底',
+        members: [{ user_id: 'user-1' }],
+        start_time: fourHoursLater,
+      }),
+      makeGroup({
+        id: 'other-style',
+        address: '更近但非偏好局',
+        play_style: '血流成河',
+        latitude: 30.2745,
+        longitude: 120.1555,
+        start_time: fiveHoursLater,
+      }),
+      makeGroup({
+        id: 'preferred-style',
+        address: '偏好玩法局',
+        play_style: '血战到底',
+        latitude: 30.285,
+        longitude: 120.165,
+        start_time: sixHoursLater,
+      }),
+    ];
+
+    renderPage();
+
+    const preferred = screen.getByText('偏好玩法局');
+    const other = screen.getByText('更近但非偏好局');
+    const fullHistory = screen.getByText('我的历史偏好局');
+
+    expect(preferred.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(other.compareDocumentPosition(fullHistory) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('derives play style preference from my-groups history instead of current open list only', () => {
+    myGroupsData = {
+      hosted: [],
+      joined: [
+        makeGroup({
+          id: 'history-completed',
+          status: 'COMPLETED',
+          play_style: '血战到底',
+          members: [{ user_id: 'user-1' }],
+        }),
+      ],
+    };
+
+    groupsData = [
+      makeGroup({
+        id: 'open-other-style',
+        address: '当前开放非偏好局',
+        status: 'OPEN',
+        play_style: '血流成河',
+        latitude: 30.2745,
+        longitude: 120.1555,
+        start_time: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
+        members: [{ user_id: 'user-1' }],
+      }),
+      makeGroup({
+        id: 'preferred-style',
+        address: '历史偏好玩法局',
+        status: 'OPEN',
+        play_style: '血战到底',
+        latitude: 30.285,
+        longitude: 120.165,
+        start_time: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+      }),
+    ];
+
+    renderPage();
+
+    const preferred = screen.getByText('历史偏好玩法局');
+    const other = screen.getByText('当前开放非偏好局');
+
+    expect(preferred.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

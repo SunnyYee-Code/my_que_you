@@ -14,17 +14,19 @@ import EmptyState from '@/components/shared/EmptyState';
 import LoadingState from '@/components/shared/LoadingState';
 import { useCity } from '@/contexts/CityContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { useGroupsByCity } from '@/hooks/useGroups';
+import { useGroupsByCity, useMyGroups } from '@/hooks/useGroups';
 import { useGroupJoinStatuses, useQuickJoin } from '@/hooks/useJoinGroup';
 import { useGeolocation, getDistanceKm, formatDistance } from '@/hooks/useGeolocation';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-import { compareGroupsByEmergencyFill, getGroupEmergencyFillMeta } from '@/lib/group-emergency-fill';
+import { getGroupEmergencyFillMeta } from '@/lib/group-emergency-fill';
+import { inferPreferredPlayStyles, sortGroupsForDisplay, type GroupSortMode } from '@/lib/group-recommendation';
 import { useToast } from '@/hooks/use-toast';
 
 type StatusFilter = 'all' | 'OPEN' | 'FULL' | 'IN_PROGRESS';
-type SortMode = 'time_asc' | 'time_desc' | 'distance';
+type SortMode = GroupSortMode;
+type GroupMember = { user_id: string };
 
 const statusFilters: { value: StatusFilter; label: string }[] = [
   { value: 'all', label: '全部' },
@@ -40,11 +42,12 @@ export default function IndexPage() {
   const { user } = useAuth();
   const [distanceFilter, setDistanceFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [sortMode, setSortMode] = useState<SortMode>('time_asc');
+  const [sortMode, setSortMode] = useState<SortMode>('recommended');
 
   const { position, loading: geoLoading, error: geoError, requestLocation } = useGeolocation();
 
   const { data: groups = [], isLoading, refetch, isFetching } = useGroupsByCity(currentCity.id);
+  const { data: myGroups } = useMyGroups();
 
   // Request location when user selects distance filter or distance sort
   useEffect(() => {
@@ -58,7 +61,7 @@ export default function IndexPage() {
     if (geoError && (distanceFilter !== 'all' || sortMode === 'distance')) {
       toast({ title: '定位失败', description: geoError, variant: 'destructive' });
     }
-  }, [geoError]);
+  }, [geoError, distanceFilter, sortMode, toast]);
 
   // Compute distances
   const groupsWithDistance = useMemo(() => {
@@ -75,6 +78,14 @@ export default function IndexPage() {
     });
   }, [groups, position]);
 
+  const preferredPlayStyles = useMemo(
+    () => inferPreferredPlayStyles([
+      ...(myGroups?.hosted ?? []),
+      ...(myGroups?.joined ?? []),
+    ], user?.id),
+    [myGroups, user?.id],
+  );
+
   // Filter
   const filteredGroups = useMemo(() => {
     // Privacy filtering: OPEN visible to all; FULL/IN_PROGRESS only if user is member; hide COMPLETED/CANCELLED
@@ -85,7 +96,7 @@ export default function IndexPage() {
       // FULL or IN_PROGRESS: only show if user is a member
       if (g.status === 'FULL' || g.status === 'IN_PROGRESS') {
         if (!user) return false;
-        const isMember = g.members?.some((m: any) => m.user_id === user.id);
+        const isMember = g.members?.some((m: GroupMember) => m.user_id === user.id);
         const isHost = g.host_id === user.id;
         if (!isMember && !isHost) return false;
       }
@@ -101,26 +112,8 @@ export default function IndexPage() {
       result = result.filter(g => g.distance !== null && g.distance <= maxKm);
     }
 
-    // Sort
-    result.sort((a, b) => {
-      const emergencyPriority = compareGroupsByEmergencyFill(a, b);
-      if (emergencyPriority !== 0) return emergencyPriority;
-
-      if (sortMode === 'distance') {
-        // Groups without coords go to the end
-        if (a.distance === null && b.distance === null) return 0;
-        if (a.distance === null) return 1;
-        if (b.distance === null) return -1;
-        return a.distance - b.distance;
-      }
-      if (sortMode === 'time_asc') {
-        return new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
-      }
-      return new Date(b.start_time).getTime() - new Date(a.start_time).getTime();
-    });
-
-    return result;
-  }, [groupsWithDistance, statusFilter, distanceFilter, sortMode, position]);
+    return sortGroupsForDisplay(result, { sortMode, preferredPlayStyles });
+  }, [groupsWithDistance, statusFilter, distanceFilter, sortMode, position, preferredPlayStyles, user]);
 
   const groupIds = filteredGroups.map(g => g.id);
   const { data: joinStatuses } = useGroupJoinStatuses(groupIds);
@@ -193,6 +186,7 @@ export default function IndexPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="recommended">智能推荐</SelectItem>
               <SelectItem value="time_asc">最近开始</SelectItem>
               <SelectItem value="time_desc">最新发布</SelectItem>
               <SelectItem value="distance">距离最近</SelectItem>

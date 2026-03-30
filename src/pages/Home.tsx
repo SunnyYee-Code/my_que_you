@@ -8,14 +8,15 @@ import CreditBadge from '@/components/shared/CreditBadge';
 import LoadingState from '@/components/shared/LoadingState';
 import { useCity } from '@/contexts/CityContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { useGroupsByCity } from '@/hooks/useGroups';
+import { useGroupsByCity, useMyGroups } from '@/hooks/useGroups';
 import { useGeolocation, getDistanceKm, formatDistance } from '@/hooks/useGeolocation';
 import { format, isToday, isTomorrow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import HomeNavBar from '@/components/home/HomeNavBar';
 import HomeFooter from '@/components/home/HomeFooter';
+import { inferPreferredPlayStyles, sortGroupsForDisplay } from '@/lib/group-recommendation';
 
 function formatSmartTime(dateStr: string) {
   const d = new Date(dateStr);
@@ -28,9 +29,16 @@ export default function HomePage() {
   const navigate = useNavigate();
   const { currentCity } = useCity();
   const { user } = useAuth();
-  const { position } = useGeolocation();
+  const { position, loading: geoLoading, error: geoError, requestLocation } = useGeolocation();
 
   const { data: groups = [], isLoading } = useGroupsByCity(currentCity.id);
+  const { data: myGroups } = useMyGroups();
+
+  useEffect(() => {
+    if (groups.length > 0 && !position && !geoLoading && !geoError) {
+      requestLocation();
+    }
+  }, [groups.length, position, geoLoading, geoError, requestLocation]);
 
   const previewGroups = useMemo(() => {
     const active = groups.filter(g => g.status === 'OPEN' || g.status === 'FULL');
@@ -41,9 +49,15 @@ export default function HomePage() {
       }
       return { ...g, distance };
     });
-    withDist.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
-    return withDist.slice(0, 6);
-  }, [groups, position]);
+    const preferredPlayStyles = inferPreferredPlayStyles([
+      ...(myGroups?.hosted ?? []),
+      ...(myGroups?.joined ?? []),
+    ], user?.id);
+    return sortGroupsForDisplay(withDist, {
+      sortMode: 'recommended',
+      preferredPlayStyles,
+    }).slice(0, 6);
+  }, [groups, myGroups, position, user?.id]);
 
   const activeCount = groups.filter(g => g.status === 'OPEN').length;
 
