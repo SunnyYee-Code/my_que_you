@@ -218,4 +218,74 @@ describe('IndexPage', () => {
       }));
     });
   });
+
+  it('prioritizes emergency fill groups and shows emergency entry cues', () => {
+    groupsData = [
+      makeGroup({
+        id: 'normal-group',
+        address: '普通招募局',
+        start_time: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
+        needed_slots: 2,
+      }),
+      makeGroup({
+        id: 'emergency-group',
+        address: '紧急补位局',
+        start_time: new Date(Date.now() + 45 * 60 * 1000).toISOString(),
+        needed_slots: 1,
+      }),
+    ];
+
+    renderPage();
+
+    const cards = Array.from(document.querySelectorAll('.animate-fade-in')) as HTMLElement[];
+    expect(cards[0]?.textContent).toContain('紧急补位局');
+    expect(screen.getByText('紧急补位')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /立即补位/ })).toBeInTheDocument();
+  });
+
+  it('keeps joined and pending statuses higher priority than emergency fill action copy', () => {
+    groupsData = [
+      makeGroup({
+        id: 'emergency-member',
+        address: '紧急补位已加入',
+        start_time: new Date(Date.now() + 45 * 60 * 1000).toISOString(),
+        needed_slots: 1,
+      }),
+      makeGroup({
+        id: 'emergency-pending',
+        address: '紧急补位审核中',
+        start_time: new Date(Date.now() + 35 * 60 * 1000).toISOString(),
+        needed_slots: 1,
+      }),
+    ];
+    joinStatuses = {
+      'emergency-member': { isMember: true, isPending: false },
+      'emergency-pending': { isMember: false, isPending: true },
+    };
+
+    renderPage();
+
+    expect(screen.getByRole('button', { name: '已加入' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '审核中' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: '立即补位' })).not.toBeInTheDocument();
+  });
+
+  it('keeps guest join flow available even when group is in emergency fill state', async () => {
+    currentUser = null;
+    groupsData = [
+      makeGroup({
+        id: 'emergency-guest',
+        address: '游客紧急补位局',
+        start_time: new Date(Date.now() + 20 * 60 * 1000).toISOString(),
+        needed_slots: 1,
+      }),
+    ];
+
+    renderPage();
+    const user = userEvent.setup();
+    expect(screen.getByText('紧急补位')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '加入' }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/login');
+  });
 });

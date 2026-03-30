@@ -27,6 +27,7 @@ const realNameState = vi.hoisted(() => ({
   isError: false,
 }));
 const supabaseCalls: Array<{ table: string; action: string; payload?: any }> = [];
+const supabaseFailures = vi.hoisted(() => ({ byTableAction: {} as Record<string, string | null> }));
 const supabaseMock = vi.hoisted(() => ({
   from: vi.fn((table: string) => ({
     select: vi.fn(() => ({
@@ -39,20 +40,23 @@ const supabaseMock = vi.hoisted(() => ({
     })),
     insert: vi.fn(async (payload: any) => {
       supabaseCalls.push({ table, action: 'insert', payload });
-      return { error: null };
+      const message = supabaseFailures.byTableAction[`${table}:insert`];
+      return { error: message ? new Error(message) : null };
     }),
     delete: vi.fn(() => ({
       eq: vi.fn((field1: string, value1: any) => ({
         eq: vi.fn(async (field2: string, value2: any) => {
           supabaseCalls.push({ table, action: 'delete', payload: { [field1]: value1, [field2]: value2 } });
-          return { error: null };
+          const message = supabaseFailures.byTableAction[`${table}:delete`];
+          return { error: message ? new Error(message) : null };
         }),
       })),
     })),
     update: vi.fn((payload: any) => ({
       eq: vi.fn(async (field: string, value: any) => {
         supabaseCalls.push({ table, action: 'update', payload: { ...payload, [field]: value } });
-        return { error: null };
+        const message = supabaseFailures.byTableAction[`${table}:update`];
+        return { error: message ? new Error(message) : null };
       }),
     })),
   })),
@@ -132,6 +136,7 @@ describe('GroupDetailPage', () => {
     toastMock.mockReset();
     invalidateQueriesMock.mockReset();
     supabaseCalls.length = 0;
+    supabaseFailures.byTableAction = {};
     authState.user = { id: 'user-1' };
     groupState.data = buildGroup();
     groupState.isLoading = false;
@@ -172,6 +177,13 @@ describe('GroupDetailPage', () => {
     expect(screen.getByText('血战到底')).toBeInTheDocument();
   });
 
+  it('shows emergency fill banner for near-term groups with open slots', () => {
+    renderPage();
+
+    expect(screen.getByText('紧急补位中')).toBeInTheDocument();
+    expect(screen.getByText(/距开局/)).toBeInTheDocument();
+  });
+
   it('requires leave reason within 60 minutes and deducts credit after leaving', async () => {
     renderPage();
     const user = userEvent.setup();
@@ -183,6 +195,14 @@ describe('GroupDetailPage', () => {
     await user.click(confirm);
     await waitFor(() => expect(supabaseCalls.some(c => c.table === 'group_member_exits' && c.action === 'insert')).toBe(true));
     expect(supabaseCalls.some(c => c.table === 'credit_history' && c.action === 'insert')).toBe(true);
+    expect(
+      supabaseCalls.some(
+        c => c.table === 'notifications'
+          && c.action === 'insert'
+          && typeof c.payload?.content === 'string'
+          && c.payload.content.includes('紧急补位'),
+      ),
+    ).toBe(true);
     expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '已退出拼团' }));
     expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '⚠️ 信用分已扣除' }));
   });
@@ -200,6 +220,42 @@ describe('GroupDetailPage', () => {
     await waitFor(() => expect(supabaseCalls.some(c => c.table === 'group_member_exits' && c.action === 'insert' && c.payload.exit_type === 'kicked')).toBe(true));
     expect(supabaseCalls.some(c => c.table === 'notifications' && c.action === 'insert')).toBe(true);
     expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '已移除成员' }));
+  });
+
+  it('treats notification failure after leave as warning instead of whole-flow failure', async () => {
+    supabaseFailures.byTableAction['notifications:insert'] = 'notify failed';
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: '退出拼团' }));
+    await user.type(screen.getByPlaceholderText('请说明退出原因...'), '临时有事');
+    await user.click(await screen.findByRole('button', { name: /仍然退出/ }));
+
+    await waitFor(() => {
+      expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '已退出拼团' }));
+    });
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({
+      title: '补位通知发送失败',
+      variant: 'destructive',
+    }));
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['group'] });
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['groups'] });
+  });
+
+  it('shows emergency-fill toast after host removes member and group becomes urgent', async () => {
+    authState.user = { id: 'host-1' };
+    groupState.data = buildGroup();
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(screen.getAllByRole('button').find(btn => btn.className.includes('text-destructive'))!);
+    await user.type(screen.getByPlaceholderText('请说明移除原因...'), '多次迟到');
+    await user.click(await screen.findByRole('button', { name: '确认移除' }));
+
+    await waitFor(() => {
+      expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '已移除成员' }));
+    });
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '已触发紧急补位' }));
   });
 
   it('opens amap marker navigation when coordinates exist', async () => {

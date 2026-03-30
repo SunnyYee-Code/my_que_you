@@ -20,6 +20,7 @@ import { useGeolocation, getDistanceKm, formatDistance } from '@/hooks/useGeoloc
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { compareGroupsByEmergencyFill, getGroupEmergencyFillMeta } from '@/lib/group-emergency-fill';
 import { useToast } from '@/hooks/use-toast';
 
 type StatusFilter = 'all' | 'OPEN' | 'FULL' | 'IN_PROGRESS';
@@ -66,7 +67,11 @@ export default function IndexPage() {
       if (position && g.latitude && g.longitude) {
         distance = getDistanceKm(position.lat, position.lng, g.latitude, g.longitude);
       }
-      return { ...g, distance };
+      return {
+        ...g,
+        distance,
+        emergencyFill: getGroupEmergencyFillMeta(g),
+      };
     });
   }, [groups, position]);
 
@@ -98,6 +103,9 @@ export default function IndexPage() {
 
     // Sort
     result.sort((a, b) => {
+      const emergencyPriority = compareGroupsByEmergencyFill(a, b);
+      if (emergencyPriority !== 0) return emergencyPriority;
+
       if (sortMode === 'distance') {
         // Groups without coords go to the end
         if (a.distance === null && b.distance === null) return 0;
@@ -134,7 +142,11 @@ export default function IndexPage() {
     if (status?.isPending) return { label: '审核中', disabled: true, variant: 'outline' as const };
     if (group.status === 'FULL') return { label: '已满', disabled: true, variant: 'secondary' as const };
     if (group.status !== 'OPEN') return { label: '已关闭', disabled: true, variant: 'secondary' as const };
-    return { label: '加入', disabled: false, variant: 'default' as const };
+    return {
+      label: group.emergencyFill?.isEmergencyFill ? group.emergencyFill.actionText : '加入',
+      disabled: false,
+      variant: 'default' as const,
+    };
   };
 
   // COMPLETED/CANCELLED groups are now filtered out, so inactive is always false
@@ -253,6 +265,7 @@ export default function IndexPage() {
               const hostFlag = isHostFn(group);
               const isInProgress = group.status === 'IN_PROGRESS';
               const isFull = !isInProgress && (group.needed_slots === 0 || group.status === 'FULL');
+              const isEmergencyFill = group.emergencyFill?.isEmergencyFill;
 
               return (
                 <Card
@@ -261,6 +274,7 @@ export default function IndexPage() {
                     'cursor-pointer transition-all animate-fade-in relative overflow-hidden',
                     inactive ? 'opacity-60 hover:opacity-80' : 'hover:shadow-mahjong',
                     hostFlag && 'ring-1 ring-primary/30',
+                    isEmergencyFill && 'ring-1 ring-destructive/40 bg-gradient-to-br from-destructive/5 via-background to-background',
                     isFull && !inactive && 'opacity-80',
                     isInProgress && 'ring-1 ring-[hsl(var(--status-progress)/0.4)]'
                   )}
@@ -283,6 +297,17 @@ export default function IndexPage() {
                   )}
 
                   <CardContent className="p-4 space-y-3">
+                    {isEmergencyFill && (
+                      <div className="flex items-center justify-between gap-2">
+                        <Badge variant="destructive" className="h-6 px-2.5 text-[11px] tracking-[0.08em]">
+                          {group.emergencyFill.badgeText}
+                        </Badge>
+                        <span className="text-xs font-medium text-destructive">
+                          {group.emergencyFill.countdownText}
+                        </span>
+                      </div>
+                    )}
+
                     {/* Top: host info + slot indicator */}
                     <div className="flex items-start justify-between gap-3">
                       {host && (
@@ -307,7 +332,7 @@ export default function IndexPage() {
                           <>
                             <div className={cn(
                               'text-2xl font-black leading-none',
-                              isFull ? 'text-[hsl(var(--status-full))]' : 'text-primary'
+                              isFull ? 'text-[hsl(var(--status-full))]' : isEmergencyFill ? 'text-destructive' : 'text-primary'
                             )}>
                               缺{group.needed_slots}人
                             </div>
@@ -358,7 +383,10 @@ export default function IndexPage() {
                         size="sm"
                         variant={btnState.variant}
                         disabled={btnState.disabled || quickJoin.isPending}
-                        className="w-full text-xs h-8 gap-1"
+                        className={cn(
+                          'w-full text-xs h-8 gap-1',
+                          isEmergencyFill && 'bg-destructive hover:bg-destructive/90'
+                        )}
                         onClick={(e) => handleJoinClick(e, group.id, group.host_id)}
                       >
                         {quickJoin.isPending && quickJoin.variables?.groupId === group.id ? (

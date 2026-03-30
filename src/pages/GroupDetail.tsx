@@ -19,16 +19,29 @@ import { zhCN } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import AddFriendButton from '@/components/friends/AddFriendButton';
 import InviteFriendsDialog from '@/components/friends/InviteFriendsDialog';
 import { REAL_NAME_SCENES } from '@/constants/realName';
+import { getGroupEmergencyFillMeta } from '@/lib/group-emergency-fill';
 import {
   createDefaultRealNameSnapshot,
   shouldBlockByRestrictionLevel,
   shouldShowRealNameGuard,
 } from '@/lib/real-name-verification';
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}
+
+function throwIfSupabaseError(result: { error: unknown } | null | undefined, fallback: string) {
+  if (result?.error) {
+    throw new Error(getErrorMessage(result.error, fallback));
+  }
+}
 
 export default function GroupDetailPage() {
   const [kickDialogOpen, setKickDialogOpen] = useState(false);
@@ -89,6 +102,7 @@ export default function GroupDetailPage() {
   const endDate = new Date(group.end_time);
   const isUpcoming = startDate > new Date();
   const emptySlots = group.needed_slots;
+  const emergencyFillMeta = getGroupEmergencyFillMeta(group);
   const effectiveRealNameSnapshot = user
     ? (realNameSnapshot ?? (realNameError
         ? {
@@ -128,24 +142,50 @@ export default function GroupDetailPage() {
   const handleLeave = async () => {
     try {
       // Record exit
-      await supabase.from('group_member_exits').insert({
+      const exitInsertResult = await supabase.from('group_member_exits').insert({
         group_id: group.id,
         user_id: user!.id,
         exit_type: 'left',
         reason: isWithin60Min ? leaveReason : null,
         credit_change: isWithin60Min ? -leavePoints : 0,
       });
+      throwIfSupabaseError(exitInsertResult, '退出记录保存失败');
 
-      await supabase.from('group_members').delete().eq('group_id', group.id).eq('user_id', user!.id);
+      const deleteMemberResult = await supabase.from('group_members').delete().eq('group_id', group.id).eq('user_id', user!.id);
+      throwIfSupabaseError(deleteMemberResult, '成员移除失败');
       const newNeeded = group.total_slots - (members.length - 1);
-      await supabase.from('groups').update({ needed_slots: newNeeded, status: 'OPEN' }).eq('id', group.id);
+      const nextEmergencyFillMeta = getGroupEmergencyFillMeta({
+        ...group,
+        status: 'OPEN',
+        needed_slots: newNeeded,
+      });
+      const groupUpdateResult = await supabase.from('groups').update({ needed_slots: newNeeded, status: 'OPEN' }).eq('id', group.id);
+      throwIfSupabaseError(groupUpdateResult, '场次状态更新失败');
+
+      const warnings: Array<{ title: string; description: string }> = [];
 
       if (isWithin60Min) {
         // Deduct credit
-        await supabase.from('profiles').update({ credit_score: Math.max(0, (members.find(m => m.user_id === user!.id)?.profiles?.credit_score || 100) - leavePoints) }).eq('id', user!.id);
-        await supabase.from('credit_history').insert({
+        const profileUpdateResult = await supabase
+          .from('profiles')
+          .update({ credit_score: Math.max(0, (members.find(m => m.user_id === user!.id)?.profiles?.credit_score || 100) - leavePoints) })
+          .eq('id', user!.id);
+        if (profileUpdateResult.error) {
+          warnings.push({
+            title: '信用分更新失败',
+            description: '退出已生效，但信用分更新未成功，请稍后复查。',
+          });
+        }
+
+        const creditHistoryResult = await supabase.from('credit_history').insert({
           user_id: user!.id, change: -leavePoints, reason: '开局前60分钟内退出拼团', group_id: group.id, can_appeal: true,
         });
+        if (creditHistoryResult.error) {
+          warnings.push({
+            title: '信用记录写入失败',
+            description: '退出已生效，但信用变更记录未成功写入，请联系管理员补记。',
+          });
+        }
         toast({ title: '已退出拼团' });
         toast({ title: '⚠️ 信用分已扣除', description: `开局前60分钟内退出，信用分-${leavePoints}`, variant: 'destructive' });
       } else {
@@ -155,19 +195,41 @@ export default function GroupDetailPage() {
       // Notify host
       const leaverProfile = members.find(m => m.user_id === user!.id)?.profiles;
       const leaverName = leaverProfile?.nickname || '用户';
-      await supabase.from('notifications').insert({
+      const emergencyFillSuffix = nextEmergencyFillMeta.isEmergencyFill
+        ? ` 当前已触发紧急补位（${nextEmergencyFillMeta.countdownText}）。`
+        : '';
+      const notificationResult = await supabase.from('notifications').insert({
         user_id: group.host_id,
         type: 'group_cancelled' as any,
         title: '成员退出拼团',
-        content: `${leaverName} 已退出你的拼团${isWithin60Min && leaveReason ? '，理由：' + leaveReason : ''}`,
+        content: `${leaverName} 已退出你的拼团${isWithin60Min && leaveReason ? '，理由：' + leaveReason : ''}。${emergencyFillSuffix}`.trim(),
         link_to: `/group/${group.id}`,
       });
+      if (notificationResult.error) {
+        warnings.push({
+          title: '补位通知发送失败',
+          description: '退出已生效，但房主通知未发送成功，请稍后重试提醒。',
+        });
+      }
+      if (nextEmergencyFillMeta.isEmergencyFill) {
+        toast({
+          title: '已触发紧急补位',
+          description: `${nextEmergencyFillMeta.description}，该场次会在列表优先曝光。`,
+        });
+      }
+
+      warnings.forEach((warning) => {
+        toast({ ...warning, variant: 'destructive' });
+      });
+
       setLeaveDialogOpen(false);
       setLeaveReason('');
       queryClient.invalidateQueries({ queryKey: ['group'] });
       queryClient.invalidateQueries({ queryKey: ['groups'] });
     } catch (err: any) {
-      toast({ title: '退出失败', variant: 'destructive' });
+      queryClient.invalidateQueries({ queryKey: ['group'] });
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      toast({ title: '退出失败', description: getErrorMessage(err, '退出链路执行失败'), variant: 'destructive' });
     }
   };
 
@@ -178,7 +240,7 @@ export default function GroupDetailPage() {
     }
     try {
       // Record exit
-      await supabase.from('group_member_exits').insert({
+      const exitInsertResult = await supabase.from('group_member_exits').insert({
         group_id: group.id,
         user_id: kickTargetId,
         exit_type: 'kicked',
@@ -186,36 +248,78 @@ export default function GroupDetailPage() {
         kicked_by: user!.id,
         credit_change: -kickPoints,
       });
+      throwIfSupabaseError(exitInsertResult, '移除记录保存失败');
 
       // Remove member
-      await supabase.from('group_members').delete().eq('group_id', group.id).eq('user_id', kickTargetId);
+      const deleteMemberResult = await supabase.from('group_members').delete().eq('group_id', group.id).eq('user_id', kickTargetId);
+      throwIfSupabaseError(deleteMemberResult, '成员移除失败');
       const newNeeded = group.total_slots - (members.length - 1);
-      await supabase.from('groups').update({ needed_slots: newNeeded, status: 'OPEN' }).eq('id', group.id);
+      const nextEmergencyFillMeta = getGroupEmergencyFillMeta({
+        ...group,
+        status: 'OPEN',
+        needed_slots: newNeeded,
+      });
+      const groupUpdateResult = await supabase.from('groups').update({ needed_slots: newNeeded, status: 'OPEN' }).eq('id', group.id);
+      throwIfSupabaseError(groupUpdateResult, '场次状态更新失败');
 
       // Deduct credit from kicked user
       const kickedProfile = members.find(m => m.user_id === kickTargetId)?.profiles;
-      await supabase.from('profiles').update({ credit_score: Math.max(0, (kickedProfile?.credit_score || 100) - kickPoints) }).eq('id', kickTargetId);
-      await supabase.from('credit_history').insert({
+      const warnings: Array<{ title: string; description: string }> = [];
+      const profileUpdateResult = await supabase
+        .from('profiles')
+        .update({ credit_score: Math.max(0, (kickedProfile?.credit_score || 100) - kickPoints) })
+        .eq('id', kickTargetId);
+      if (profileUpdateResult.error) {
+        warnings.push({
+          title: '信用分更新失败',
+          description: '成员已移除，但信用分更新未成功，请稍后复查。',
+        });
+      }
+
+      const creditHistoryResult = await supabase.from('credit_history').insert({
         user_id: kickTargetId, change: -kickPoints, reason: '被房主踢出拼团：' + kickReason, group_id: group.id, can_appeal: true,
       });
+      if (creditHistoryResult.error) {
+        warnings.push({
+          title: '信用记录写入失败',
+          description: '成员已移除，但信用变更记录未成功写入，请联系管理员补记。',
+        });
+      }
 
       // Send notification
-      await supabase.from('notifications').insert({
+      const notificationResult = await supabase.from('notifications').insert({
         user_id: kickTargetId,
         type: 'group_cancelled' as any,
         title: '被移出拼团',
         content: `房主将你移出了拼团，理由：${kickReason}`,
         link_to: `/my-groups`,
       });
+      if (notificationResult.error) {
+        warnings.push({
+          title: '补位通知发送失败',
+          description: '成员已移除，但通知未发送成功，请稍后重试提醒。',
+        });
+      }
 
       toast({ title: '已移除成员' });
+      if (nextEmergencyFillMeta.isEmergencyFill) {
+        toast({
+          title: '已触发紧急补位',
+          description: `${nextEmergencyFillMeta.description}，该场次会在列表优先曝光。`,
+        });
+      }
+      warnings.forEach((warning) => {
+        toast({ ...warning, variant: 'destructive' });
+      });
       setKickDialogOpen(false);
       setKickTargetId(null);
       setKickReason('');
       queryClient.invalidateQueries({ queryKey: ['group'] });
       queryClient.invalidateQueries({ queryKey: ['groups'] });
     } catch (err: any) {
-      toast({ title: '操作失败', description: err.message, variant: 'destructive' });
+      queryClient.invalidateQueries({ queryKey: ['group'] });
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      toast({ title: '操作失败', description: getErrorMessage(err, '移除链路执行失败'), variant: 'destructive' });
     }
   };
 
@@ -324,6 +428,25 @@ export default function GroupDetailPage() {
             </div>
           </CardContent>
         </Card>
+
+        {emergencyFillMeta.isEmergencyFill && (
+          <Card className="border-destructive/30 bg-destructive/5">
+            <CardContent className="p-4 flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-destructive mt-0.5 shrink-0" />
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Badge variant="destructive" className="h-6 px-2.5 text-[11px] tracking-[0.08em]">
+                    {emergencyFillMeta.badgeText}
+                  </Badge>
+                  <p className="font-semibold text-destructive">紧急补位中</p>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {emergencyFillMeta.description}，当前场次已进入优先曝光。
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Play style / game note */}
         {(group.game_note || group.play_style) && (
