@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,8 @@ import CreditBadge from '@/components/shared/CreditBadge';
 import LoadingState from '@/components/shared/LoadingState';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUpdateProfile, useCreditHistory } from '@/hooks/useProfile';
+import { useAccountDeletionStatus, useApplyAccountDeletion, useCancelAccountDeletion } from '@/hooks/useAccountDeletion';
+import { ACCOUNT_DELETION_STATUS, DEFAULT_ACCOUNT_DELETION_SNAPSHOT } from '@/constants/accountDeletion';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { ArrowLeft, AlertTriangle, Shield, Camera, User, Phone, Calendar, Lock } from 'lucide-react';
@@ -21,6 +23,9 @@ export default function SettingsPage() {
   const { user, profile, signOut, refreshProfile, loading: authLoading, isTest } = useAuth();
   const { toast } = useToast();
   const { data: creditHistory = [], isLoading } = useCreditHistory(user?.id);
+  const { data: accountDeletionStatus = DEFAULT_ACCOUNT_DELETION_SNAPSHOT, isLoading: deletionStatusLoading } = useAccountDeletionStatus();
+  const applyAccountDeletion = useApplyAccountDeletion();
+  const cancelAccountDeletion = useCancelAccountDeletion();
   const updateProfile = useUpdateProfile();
   const [appealReason, setAppealReason] = useState('');
   const [nickname, setNickname] = useState(profile?.nickname || '');
@@ -31,12 +36,74 @@ export default function SettingsPage() {
   const [changingPassword, setChangingPassword] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  if (authLoading || isLoading) return <AppLayout><LoadingState /></AppLayout>;
+  if (authLoading || isLoading || deletionStatusLoading) return <AppLayout><LoadingState /></AppLayout>;
 
   if (!user || !profile) {
     navigate('/login');
     return null;
   }
+
+  const deletionStatusMeta = useMemo(() => {
+    switch (accountDeletionStatus.applyStatus) {
+      case ACCOUNT_DELETION_STATUS.COOLING_OFF:
+        return {
+          title: '账号注销冷静期中',
+          description: accountDeletionStatus.coolingOffExpireAt
+            ? `冷静期截止：${format(new Date(accountDeletionStatus.coolingOffExpireAt), 'yyyy-MM-dd HH:mm')}`
+            : '系统将在冷静期结束后继续处理注销。',
+          tone: 'warning',
+        } as const;
+      case ACCOUNT_DELETION_STATUS.PROCESSING:
+        return {
+          title: '账号注销处理中',
+          description: '系统正在处理账号数据，请留意站内通知。',
+          tone: 'info',
+        } as const;
+      case ACCOUNT_DELETION_STATUS.COMPLETED:
+        return {
+          title: '账号已完成注销',
+          description: accountDeletionStatus.resultReason || '账号已进入注销完成状态。',
+          tone: 'success',
+        } as const;
+      case ACCOUNT_DELETION_STATUS.CANCELLED:
+        return {
+          title: '已撤销注销申请',
+          description: accountDeletionStatus.resultReason || '你可以继续正常使用账号。',
+          tone: 'info',
+        } as const;
+      case ACCOUNT_DELETION_STATUS.REJECTED:
+        return {
+          title: '注销申请未通过',
+          description: accountDeletionStatus.resultReason || '请根据提示处理后重新申请。',
+          tone: 'danger',
+        } as const;
+      default:
+        return {
+          title: '账号状态正常',
+          description: '如确认不再使用，可发起账号注销申请。',
+          tone: 'default',
+        } as const;
+    }
+  }, [accountDeletionStatus]);
+
+  const shouldShowDeletionApplyEntry = ![
+    ACCOUNT_DELETION_STATUS.COOLING_OFF,
+    ACCOUNT_DELETION_STATUS.PROCESSING,
+    ACCOUNT_DELETION_STATUS.COMPLETED,
+  ].includes(accountDeletionStatus.applyStatus);
+
+  useEffect(() => {
+    if (accountDeletionStatus.applyStatus !== ACCOUNT_DELETION_STATUS.COMPLETED) return;
+
+    void (async () => {
+      toast({
+        title: '账号已注销',
+        description: '当前登录态已失效，请使用其他账号重新登录。',
+      });
+      await signOut();
+      navigate('/login');
+    })();
+  }, [accountDeletionStatus.applyStatus, navigate, signOut, toast]);
 
   const appealableHistory = creditHistory.filter(ch => ch.can_appeal && ch.change < 0 && !ch.appeal_status);
 
@@ -81,7 +148,45 @@ export default function SettingsPage() {
       toast({ title: '测试账号不允许注销', variant: 'destructive' });
       return;
     }
-    toast({ title: '账号注销请求已提交', description: '我们会在7个工作日内处理' });
+
+    if (!accountDeletionStatus.canOperate) {
+      toast({
+        title: '当前无法发起注销',
+        description: accountDeletionStatus.forbiddenReason || '请稍后重试',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      await applyAccountDeletion.mutateAsync();
+      toast({
+        title: '注销申请已提交',
+        description: '账号已进入冷静期，请在到期前确认是否撤销。',
+      });
+    } catch (err: any) {
+      toast({
+        title: '注销申请提交失败',
+        description: err?.message || '请稍后重试',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleCancelDeactivate = async () => {
+    try {
+      await cancelAccountDeletion.mutateAsync();
+      toast({
+        title: '已撤销注销申请',
+        description: '你的账号状态已恢复正常。',
+      });
+    } catch (err: any) {
+      toast({
+        title: '撤销注销失败',
+        description: err?.message || '请稍后重试',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleAppeal = async (creditId: string) => {
@@ -337,19 +442,62 @@ export default function SettingsPage() {
               <AlertTriangle className="h-4 w-4" /> 危险操作
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="destructive" className="w-full">注销账号</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader><DialogTitle>确认注销账号？</DialogTitle></DialogHeader>
-                <p className="text-sm text-muted-foreground">注销后所有数据将被删除且无法恢复。如有进行中的拼团，请先完成或取消。</p>
-                <DialogFooter>
-                  <Button variant="destructive" onClick={handleDeactivate}>确认注销</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+          <CardContent className="space-y-4">
+            <div
+              className="rounded-lg border p-4"
+              data-tone={deletionStatusMeta.tone}
+            >
+              <p className="text-sm font-medium">{deletionStatusMeta.title}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{deletionStatusMeta.description}</p>
+              {accountDeletionStatus.forbiddenReason && (
+                <p className="mt-2 text-sm text-destructive">{accountDeletionStatus.forbiddenReason}</p>
+              )}
+            </div>
+
+            <div className="rounded-lg bg-muted/50 p-4 text-sm text-muted-foreground space-y-2">
+              <p className="font-medium text-foreground">注销前须知</p>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>提交申请后将进入冷静期，冷静期内可撤销申请。</li>
+                <li>冷静期结束后，系统会根据后端状态继续处理账号注销。</li>
+                <li>如后端返回限制原因，请先处理相关问题后再尝试。</li>
+              </ul>
+            </div>
+
+            {accountDeletionStatus.applyStatus === ACCOUNT_DELETION_STATUS.COOLING_OFF ? (
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleCancelDeactivate}
+                disabled={cancelAccountDeletion.isPending}
+              >
+                {cancelAccountDeletion.isPending ? '撤销中...' : '撤销注销申请'}
+              </Button>
+            ) : shouldShowDeletionApplyEntry ? (
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button
+                    variant="destructive"
+                    className="w-full"
+                    disabled={!accountDeletionStatus.canOperate || applyAccountDeletion.isPending}
+                  >
+                    {applyAccountDeletion.isPending ? '提交中...' : '注销账号'}
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader><DialogTitle>确认注销账号？</DialogTitle></DialogHeader>
+                  <p className="text-sm text-muted-foreground">注销后系统将按后端状态流转处理账号与数据。如有进行中的拼团，请先完成或取消。</p>
+                  <DialogFooter>
+                    <Button
+                      variant="destructive"
+                      onClick={handleDeactivate}
+                      disabled={!accountDeletionStatus.canOperate || applyAccountDeletion.isPending}
+                    >
+                      {applyAccountDeletion.isPending ? '提交中...' : '确认注销'}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            ) : null}
           </CardContent>
         </Card>
         )}

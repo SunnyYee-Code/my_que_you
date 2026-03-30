@@ -693,6 +693,10 @@ export type Database = {
           onboarding_completed: boolean
           phone: string | null
           require_email_verification: boolean
+          deletion_status: string
+          deletion_requested_at: string | null
+          deletion_completed_at: string | null
+          deleted_at: string | null
           uid: string
           updated_at: string
         }
@@ -713,6 +717,10 @@ export type Database = {
           onboarding_completed?: boolean
           phone?: string | null
           require_email_verification?: boolean
+          deletion_status?: string
+          deletion_requested_at?: string | null
+          deletion_completed_at?: string | null
+          deleted_at?: string | null
           uid?: string
           updated_at?: string
         }
@@ -733,6 +741,10 @@ export type Database = {
           onboarding_completed?: boolean
           phone?: string | null
           require_email_verification?: boolean
+          deletion_status?: string
+          deletion_requested_at?: string | null
+          deletion_completed_at?: string | null
+          deleted_at?: string | null
           uid?: string
           updated_at?: string
         }
@@ -796,6 +808,95 @@ export type Database = {
             foreignKeyName: "reports_reporter_id_fkey"
             columns: ["reporter_id"]
             isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      account_deletion_audit_logs: {
+        Row: {
+          action: string
+          created_at: string
+          detail: Json | null
+          id: string
+          operator_id: string | null
+          user_id: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          detail?: Json | null
+          id?: string
+          operator_id?: string | null
+          user_id: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          detail?: Json | null
+          id?: string
+          operator_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_deletion_audit_logs_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_deletion_audit_logs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      account_deletion_requests: {
+        Row: {
+          applied_at: string
+          cooling_off_expire_at: string
+          created_at: string
+          deleted_at: string | null
+          forbidden_reason: string | null
+          id: string
+          result_reason: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          applied_at?: string
+          cooling_off_expire_at: string
+          created_at?: string
+          deleted_at?: string | null
+          forbidden_reason?: string | null
+          id?: string
+          result_reason?: string | null
+          status: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          applied_at?: string
+          cooling_off_expire_at?: string
+          created_at?: string
+          deleted_at?: string | null
+          forbidden_reason?: string | null
+          id?: string
+          result_reason?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_deletion_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -1109,6 +1210,7 @@ export const Constants = {
         "friend_request",
         "group_invitation",
         "direct_message",
+        "account_deletion",
       ],
       request_status: ["PENDING", "APPROVED", "REJECTED"],
     },
