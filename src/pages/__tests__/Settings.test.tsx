@@ -11,6 +11,9 @@ const updateProfileHookMock = vi.fn();
 const useAccountDeletionStatusMock = vi.fn();
 const useApplyAccountDeletionMock = vi.fn();
 const useCancelAccountDeletionMock = vi.fn();
+const useRealNameVerificationMock = vi.fn();
+const useSubmitRealNameVerificationMock = vi.fn();
+const useCancelRealNameVerificationMock = vi.fn();
 const fromMock = vi.fn();
 const updateDbMock = vi.fn();
 const eqMock = vi.fn();
@@ -20,6 +23,8 @@ const signOutMock = vi.fn();
 const refreshProfileMock = vi.fn();
 const applyDeletionMutateAsyncMock = vi.fn();
 const cancelDeletionMutateAsyncMock = vi.fn();
+const submitRealNameMutateAsyncMock = vi.fn();
+const cancelRealNameMutateAsyncMock = vi.fn();
 
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
@@ -30,6 +35,11 @@ vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => useAuthMock() }));
 vi.mock('@/hooks/useProfile', () => ({
   useCreditHistory: (...args: any[]) => useCreditHistoryMock(...args),
   useUpdateProfile: () => updateProfileHookMock(),
+}));
+vi.mock('@/hooks/useRealNameVerification', () => ({
+  useRealNameVerification: () => useRealNameVerificationMock(),
+  useSubmitRealNameVerification: () => useSubmitRealNameVerificationMock(),
+  useCancelRealNameVerification: () => useCancelRealNameVerificationMock(),
 }));
 vi.mock('@/hooks/useAccountDeletion', () => ({
   useAccountDeletionStatus: () => useAccountDeletionStatusMock(),
@@ -53,6 +63,7 @@ vi.mock('@/components/ui/card', () => ({ Card: ({ children, ...props }: any) => 
 vi.mock('@/components/ui/input', () => ({ Input: (props: any) => <input {...props} /> }));
 vi.mock('@/components/ui/textarea', () => ({ Textarea: (props: any) => <textarea {...props} /> }));
 vi.mock('@/components/ui/button', () => ({ Button: ({ children, ...props }: any) => <button {...props}>{children}</button> }));
+vi.mock('@/components/ui/checkbox', () => ({ Checkbox: ({ checked, onCheckedChange }: any) => <input type="checkbox" checked={!!checked} onChange={(e) => onCheckedChange?.(e.target.checked)} /> }));
 vi.mock('@/components/ui/dialog', () => ({
   Dialog: ({ children }: any) => <div>{children}</div>,
   DialogTrigger: ({ children }: any) => <div>{children}</div>,
@@ -73,6 +84,8 @@ describe('SettingsPage', () => {
     refreshProfileMock.mockResolvedValue(undefined);
     applyDeletionMutateAsyncMock.mockResolvedValue({});
     cancelDeletionMutateAsyncMock.mockResolvedValue({});
+    submitRealNameMutateAsyncMock.mockResolvedValue({});
+    cancelRealNameMutateAsyncMock.mockResolvedValue({});
     useAuthMock.mockReturnValue({
       user: { id: 'u1', email: 'user@example.com' },
       profile: { nickname: '老雀友', phone: '13800138000', credit_score: 95, created_at: new Date().toISOString() },
@@ -99,6 +112,23 @@ describe('SettingsPage', () => {
     });
     useApplyAccountDeletionMock.mockReturnValue({ isPending: false, mutateAsync: applyDeletionMutateAsyncMock });
     useCancelAccountDeletionMock.mockReturnValue({ isPending: false, mutateAsync: cancelDeletionMutateAsyncMock });
+    useRealNameVerificationMock.mockReturnValue({
+      data: {
+        status: 'unverified',
+        display_status_text: '未实名',
+        can_submit: true,
+        can_resubmit: false,
+        can_cancel: false,
+        reject_reason_text: null,
+        verified_at: null,
+        last_submitted_at: null,
+        restriction_level: 'limited',
+        restriction_scenes: ['group_create', 'group_join'],
+      },
+      isLoading: false,
+    });
+    useSubmitRealNameVerificationMock.mockReturnValue({ isPending: false, mutateAsync: submitRealNameMutateAsyncMock });
+    useCancelRealNameVerificationMock.mockReturnValue({ isPending: false, mutateAsync: cancelRealNameMutateAsyncMock });
     updateProfileHookMock.mockReturnValue({ isPending: false, mutateAsync: vi.fn() });
     eqMock.mockResolvedValue({ error: null });
     updateDbMock.mockReturnValue({ eq: eqMock });
@@ -243,5 +273,120 @@ describe('SettingsPage', () => {
         description: '你的账号状态已恢复正常。',
       });
     });
+  });
+
+  it('submits real-name verification form from settings page', async () => {
+    submitRealNameMutateAsyncMock.mockResolvedValue({});
+    renderPage();
+
+    fireEvent.change(screen.getByPlaceholderText('请输入真实姓名'), { target: { value: '张三' } });
+    fireEvent.change(screen.getByPlaceholderText('请输入身份证号'), { target: { value: '110101199001011234' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: '提交认证' }));
+
+    await waitFor(() => {
+      expect(submitRealNameMutateAsyncMock).toHaveBeenCalledWith({
+        real_name: '张三',
+        id_number: '110101199001011234',
+        consent_checked: true,
+      });
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '实名认证提交成功',
+        description: '资料已提交，等待平台审核。',
+      });
+    });
+  });
+
+  it('renders pending status and supports cancel action placeholder', async () => {
+    cancelRealNameMutateAsyncMock.mockResolvedValue({});
+    useRealNameVerificationMock.mockReturnValue({
+      data: {
+        status: 'pending',
+        display_status_text: '审核中',
+        can_submit: false,
+        can_resubmit: false,
+        can_cancel: true,
+        reject_reason_text: null,
+        verified_at: null,
+        last_submitted_at: '2026-03-30T10:00:00.000Z',
+        restriction_level: 'none',
+        restriction_scenes: [],
+      },
+      isLoading: false,
+    });
+
+    renderPage();
+    expect(screen.getByText('审核中', { selector: 'span' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '撤销申请' }));
+
+    await waitFor(() => {
+      expect(cancelRealNameMutateAsyncMock).toHaveBeenCalled();
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '已撤销实名认证申请',
+        description: '当前已恢复为未实名状态。',
+      });
+    });
+  });
+
+  it('renders approved and rejected states from unified adapter', () => {
+    useRealNameVerificationMock.mockReturnValueOnce({
+      data: {
+        status: 'approved',
+        display_status_text: '已实名',
+        can_submit: false,
+        can_resubmit: false,
+        can_cancel: false,
+        reject_reason_text: null,
+        verified_at: '2026-03-30T11:00:00.000Z',
+        last_submitted_at: '2026-03-30T10:00:00.000Z',
+        restriction_level: 'none',
+        restriction_scenes: [],
+      },
+      isLoading: false,
+    });
+    const { rerender } = renderPage();
+    expect(screen.getByText('已实名')).toBeInTheDocument();
+
+    useRealNameVerificationMock.mockReturnValueOnce({
+      data: {
+        status: 'rejected',
+        display_status_text: '认证失败',
+        can_submit: false,
+        can_resubmit: true,
+        can_cancel: false,
+        reject_reason_text: '身份证信息不清晰',
+        verified_at: null,
+        last_submitted_at: '2026-03-30T10:00:00.000Z',
+        restriction_level: 'none',
+        restriction_scenes: [],
+      },
+      isLoading: false,
+    });
+    rerender(<MemoryRouter><SettingsPage /></MemoryRouter>);
+    expect(screen.getByText('认证失败')).toBeInTheDocument();
+    expect(screen.getByText(/身份证信息不清晰/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '重新提交' })).toBeInTheDocument();
+  });
+
+  it('falls back to unverified actions when backend returns cancelled status', () => {
+    useRealNameVerificationMock.mockReturnValueOnce({
+      data: {
+        status: 'cancelled',
+        display_status_text: '已撤销',
+        can_submit: true,
+        can_resubmit: false,
+        can_cancel: false,
+        reject_reason_text: null,
+        verified_at: null,
+        last_submitted_at: '2026-03-30T10:00:00.000Z',
+        restriction_level: 'none',
+        restriction_scenes: [],
+      },
+      isLoading: false,
+    });
+
+    renderPage();
+    expect(screen.getByText('已撤销')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '提交认证' })).toBeInTheDocument();
   });
 });

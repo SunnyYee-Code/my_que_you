@@ -10,6 +10,22 @@ const toastMock = vi.fn();
 const invalidateQueriesMock = vi.fn();
 const groupState = vi.hoisted(() => ({ data: null as any, isLoading: false }));
 const authState = vi.hoisted(() => ({ user: { id: 'user-1' } as any }));
+const realNameState = vi.hoisted(() => ({
+  data: {
+    status: 'approved',
+    display_status_text: '已实名',
+    can_submit: false,
+    can_resubmit: false,
+    can_cancel: false,
+    reject_reason_text: null,
+    verified_at: null,
+    last_submitted_at: null,
+    restriction_level: 'none',
+    restriction_scenes: [],
+  } as any,
+  isLoading: false,
+  isError: false,
+}));
 const supabaseCalls: Array<{ table: string; action: string; payload?: any }> = [];
 const supabaseMock = vi.hoisted(() => ({
   from: vi.fn((table: string) => ({
@@ -55,6 +71,7 @@ vi.mock('@/components/shared/ReportDialog', () => ({ default: () => <button>举�
 vi.mock('@/components/friends/AddFriendButton', () => ({ default: () => <button>加好友</button> }));
 vi.mock('@/components/friends/InviteFriendsDialog', () => ({ default: () => <button>邀请好友</button> }));
 vi.mock('@/hooks/useGroups', () => ({ useGroupDetail: () => groupState }));
+vi.mock('@/hooks/useRealNameVerification', () => ({ useRealNameVerification: () => realNameState }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => authState }));
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: toastMock }) }));
 vi.mock('@/integrations/supabase/client', () => ({ supabase: supabaseMock }));
@@ -118,6 +135,20 @@ describe('GroupDetailPage', () => {
     authState.user = { id: 'user-1' };
     groupState.data = buildGroup();
     groupState.isLoading = false;
+    realNameState.data = {
+      status: 'approved',
+      display_status_text: '已实名',
+      can_submit: false,
+      can_resubmit: false,
+      can_cancel: false,
+      reject_reason_text: null,
+      verified_at: null,
+      last_submitted_at: null,
+      restriction_level: 'none',
+      restriction_scenes: [],
+    };
+    realNameState.isLoading = false;
+    realNameState.isError = false;
     vi.spyOn(window, 'open').mockImplementation(() => null);
   });
 
@@ -187,5 +218,37 @@ describe('GroupDetailPage', () => {
     await user.click(await screen.findByRole('button', { name: '确认取消' }));
     await waitFor(() => expect(supabaseCalls.some(c => c.table === 'groups' && c.action === 'update' && c.payload.status === 'CANCELLED')).toBe(true));
     expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '拼团已取消' }));
+  });
+
+  it('shows real-name guard and blocks join action when join scene is restricted', async () => {
+    authState.user = { id: 'outsider-1' };
+    groupState.data = buildGroup({ members: [{ user_id: 'host-1', profiles: { nickname: '房主', credit_score: 98 } }] });
+    realNameState.data = {
+      status: 'unverified',
+      display_status_text: '未实名',
+      can_submit: true,
+      can_resubmit: false,
+      can_cancel: false,
+      reject_reason_text: null,
+      verified_at: null,
+      last_submitted_at: null,
+      restriction_level: 'limited',
+      restriction_scenes: ['group_join'],
+    };
+
+    renderPage();
+    expect(screen.getByText('实名限制提示')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '申请加入' })).toBeDisabled();
+  });
+
+  it('fails closed when real-name query errors for join scene', () => {
+    authState.user = { id: 'outsider-1' };
+    groupState.data = buildGroup({ members: [{ user_id: 'host-1', profiles: { nickname: '房主', credit_score: 98 } }] });
+    realNameState.data = undefined;
+    realNameState.isError = true;
+
+    renderPage();
+    expect(screen.getByText('实名限制提示')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '申请加入' })).toBeDisabled();
   });
 });

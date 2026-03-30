@@ -9,6 +9,22 @@ const navigateMock = vi.fn();
 const toastMock = vi.fn();
 const createGroupMutateAsync = vi.fn();
 const validateNoBannedWordsMock = vi.hoisted(() => vi.fn());
+const realNameState = vi.hoisted(() => ({
+  data: {
+    status: 'approved',
+    display_status_text: '已实名',
+    can_submit: false,
+    can_resubmit: false,
+    can_cancel: false,
+    reject_reason_text: null,
+    verified_at: null,
+    last_submitted_at: null,
+    restriction_level: 'none',
+    restriction_scenes: [],
+  } as any,
+  isLoading: false,
+  isError: false,
+}));
 const queryState = vi.hoisted(() => ({
   timeLimits: { max_start_hours: 24, max_duration_hours: 24 },
   dailyLimitCheck: { allowed: true, current: 0, limit: 5 } as any,
@@ -53,6 +69,7 @@ vi.mock('react-router-dom', async () => {
 });
 vi.mock('@/contexts/CityContext', () => ({ useCity: () => ({ currentCity: { id: 'city-1', name: '成都' } }) }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ user: { id: 'user-1' } }) }));
+vi.mock('@/hooks/useRealNameVerification', () => ({ useRealNameVerification: () => realNameState }));
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: toastMock }) }));
 vi.mock('@/hooks/useGroups', () => ({ useCreateGroup: () => ({ mutateAsync: createGroupMutateAsync, isPending: false }) }));
 vi.mock('@/integrations/supabase/client', () => ({ supabase: supabaseMock }));
@@ -95,6 +112,20 @@ describe('GroupCreatePage', () => {
     queryState.timeLimits = { max_start_hours: 24, max_duration_hours: 24 };
     queryState.dailyLimitCheck = { allowed: true, current: 0, limit: 5 };
     queryState.activeHostingData = [];
+    realNameState.data = {
+      status: 'approved',
+      display_status_text: '已实名',
+      can_submit: false,
+      can_resubmit: false,
+      can_cancel: false,
+      reject_reason_text: null,
+      verified_at: null,
+      last_submitted_at: null,
+      restriction_level: 'none',
+      restriction_scenes: [],
+    };
+    realNameState.isLoading = false;
+    realNameState.isError = false;
     supabaseMock.functions.invoke.mockClear();
   });
 
@@ -182,5 +213,37 @@ describe('GroupCreatePage', () => {
     await waitFor(() => expect(createGroupMutateAsync).toHaveBeenCalled());
     expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '拼团创建成功！' }));
     expect(navigateMock).toHaveBeenCalledWith('/');
+  });
+
+  it('shows real-name restriction guard and keeps publish disabled when create scene is blocked', async () => {
+    realNameState.data = {
+      status: 'unverified',
+      display_status_text: '未实名',
+      can_submit: true,
+      can_resubmit: false,
+      can_cancel: false,
+      reject_reason_text: null,
+      verified_at: null,
+      last_submitted_at: null,
+      restriction_level: 'limited',
+      restriction_scenes: ['group_create'],
+    };
+
+    renderPage();
+    const user = await fillValidForm();
+    expect(screen.getByText('实名限制提示')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '预览并发布' })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: '前往实名认证' }));
+    expect(navigateMock).toHaveBeenCalledWith('/settings?tab=real-name');
+  });
+
+  it('fails closed when real-name query errors', () => {
+    realNameState.data = undefined;
+    realNameState.isError = true;
+
+    renderPage();
+    expect(screen.getByText('实名限制提示')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '预览并发布' })).toBeDisabled();
   });
 });

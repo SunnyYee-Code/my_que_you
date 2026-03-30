@@ -693,6 +693,13 @@ export type Database = {
           onboarding_completed: boolean
           phone: string | null
           require_email_verification: boolean
+          real_name_last_submitted_at: string | null
+          real_name_reject_reason_code: string | null
+          real_name_reject_reason_text: string | null
+          real_name_request_id: string | null
+          real_name_review_required: boolean
+          real_name_status: string
+          real_name_verified_at: string | null
           deletion_status: string
           deletion_requested_at: string | null
           deletion_completed_at: string | null
@@ -717,6 +724,13 @@ export type Database = {
           onboarding_completed?: boolean
           phone?: string | null
           require_email_verification?: boolean
+          real_name_last_submitted_at?: string | null
+          real_name_reject_reason_code?: string | null
+          real_name_reject_reason_text?: string | null
+          real_name_request_id?: string | null
+          real_name_review_required?: boolean
+          real_name_status?: string
+          real_name_verified_at?: string | null
           deletion_status?: string
           deletion_requested_at?: string | null
           deletion_completed_at?: string | null
@@ -741,6 +755,13 @@ export type Database = {
           onboarding_completed?: boolean
           phone?: string | null
           require_email_verification?: boolean
+          real_name_last_submitted_at?: string | null
+          real_name_reject_reason_code?: string | null
+          real_name_reject_reason_text?: string | null
+          real_name_request_id?: string | null
+          real_name_review_required?: boolean
+          real_name_status?: string
+          real_name_verified_at?: string | null
           deletion_status?: string
           deletion_requested_at?: string | null
           deletion_completed_at?: string | null
@@ -897,6 +918,137 @@ export type Database = {
             foreignKeyName: "account_deletion_requests_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      real_name_verification_audit_logs: {
+        Row: {
+          action: string
+          created_at: string
+          from_status: string | null
+          id: string
+          metadata: Json
+          operator_id: string | null
+          operator_type: string
+          reason_code: string | null
+          reason_text: string | null
+          request_id: string | null
+          to_status: string | null
+          user_id: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          from_status?: string | null
+          id?: string
+          metadata?: Json
+          operator_id?: string | null
+          operator_type: string
+          reason_code?: string | null
+          reason_text?: string | null
+          request_id?: string | null
+          to_status?: string | null
+          user_id: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          from_status?: string | null
+          id?: string
+          metadata?: Json
+          operator_id?: string | null
+          operator_type?: string
+          reason_code?: string | null
+          reason_text?: string | null
+          request_id?: string | null
+          to_status?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "real_name_verification_audit_logs_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "real_name_verification_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "real_name_verification_audit_logs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      real_name_verification_requests: {
+        Row: {
+          cancelled_at: string | null
+          contact_phone_snapshot: string | null
+          created_at: string
+          id: string
+          id_number_hash: string
+          id_number_masked: string
+          material_payload: Json
+          real_name_encrypted: string
+          review_result_code: string | null
+          review_result_message: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          risk_flags: Json
+          status: string
+          submit_source: string
+          submitted_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          cancelled_at?: string | null
+          contact_phone_snapshot?: string | null
+          created_at?: string
+          id?: string
+          id_number_hash: string
+          id_number_masked: string
+          material_payload?: Json
+          real_name_encrypted: string
+          review_result_code?: string | null
+          review_result_message?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          risk_flags?: Json
+          status: string
+          submit_source?: string
+          submitted_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          cancelled_at?: string | null
+          contact_phone_snapshot?: string | null
+          created_at?: string
+          id?: string
+          id_number_hash?: string
+          id_number_masked?: string
+          material_payload?: Json
+          real_name_encrypted?: string
+          review_result_code?: string | null
+          review_result_message?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          risk_flags?: Json
+          status?: string
+          submit_source?: string
+          submitted_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "real_name_verification_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -1068,6 +1220,10 @@ export type Database = {
         | "friend_request"
         | "group_invitation"
         | "direct_message"
+        | "account_deletion"
+        | "real_name_submitted"
+        | "real_name_approved"
+        | "real_name_rejected"
       request_status: "PENDING" | "APPROVED" | "REJECTED"
     }
     CompositeTypes: {
@@ -1211,6 +1367,9 @@ export const Constants = {
         "group_invitation",
         "direct_message",
         "account_deletion",
+        "real_name_submitted",
+        "real_name_approved",
+        "real_name_rejected",
       ],
       request_status: ["PENDING", "APPROVED", "REJECTED"],
     },

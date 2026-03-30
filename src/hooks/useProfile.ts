@@ -18,6 +18,11 @@ export function useProfileById(userId: string | undefined) {
   });
 }
 
+export function useMyProfile() {
+  const { user } = useAuth();
+  return useProfileById(user?.id);
+}
+
 export function useUpdateProfile() {
   const queryClient = useQueryClient();
   const { user, refreshProfile } = useAuth();

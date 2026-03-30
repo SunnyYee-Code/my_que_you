@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
 import AppLayout from '@/components/layout/AppLayout';
 import UserAvatar from '@/components/shared/UserAvatar';
@@ -11,9 +12,11 @@ import CreditBadge from '@/components/shared/CreditBadge';
 import LoadingState from '@/components/shared/LoadingState';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUpdateProfile, useCreditHistory } from '@/hooks/useProfile';
+import { useCancelRealNameVerification, useRealNameVerification, useSubmitRealNameVerification } from '@/hooks/useRealNameVerification';
 import { useAccountDeletionStatus, useApplyAccountDeletion, useCancelAccountDeletion } from '@/hooks/useAccountDeletion';
 import { ACCOUNT_DELETION_STATUS, DEFAULT_ACCOUNT_DELETION_SNAPSHOT } from '@/constants/accountDeletion';
 import { useToast } from '@/hooks/use-toast';
+import { buildRealNameViewModel, getRealNameStatusActions, REAL_NAME_COPY } from '@/constants/realName';
 import { supabase } from '@/integrations/supabase/client';
 import { ArrowLeft, AlertTriangle, Shield, Camera, User, Phone, Calendar, Lock } from 'lucide-react';
 import { format } from 'date-fns';
@@ -27,7 +30,13 @@ export default function SettingsPage() {
   const applyAccountDeletion = useApplyAccountDeletion();
   const cancelAccountDeletion = useCancelAccountDeletion();
   const updateProfile = useUpdateProfile();
+  const { data: realNameSnapshot, isLoading: realNameLoading } = useRealNameVerification();
+  const submitRealNameVerification = useSubmitRealNameVerification();
+  const cancelRealNameVerification = useCancelRealNameVerification();
   const [appealReason, setAppealReason] = useState('');
+  const [realName, setRealName] = useState('');
+  const [idNumber, setIdNumber] = useState('');
+  const [consentChecked, setConsentChecked] = useState(false);
   const [nickname, setNickname] = useState(profile?.nickname || '');
   const [isUploading, setIsUploading] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -36,12 +45,47 @@ export default function SettingsPage() {
   const [changingPassword, setChangingPassword] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  if (authLoading || isLoading || deletionStatusLoading) return <AppLayout><LoadingState /></AppLayout>;
+  if (authLoading || isLoading || deletionStatusLoading || realNameLoading) return <AppLayout><LoadingState /></AppLayout>;
 
   if (!user || !profile) {
     navigate('/login');
     return null;
   }
+
+
+  const realNameViewModel = useMemo(() => buildRealNameViewModel(realNameSnapshot), [realNameSnapshot]);
+  const realNameActions = useMemo(() => getRealNameStatusActions(realNameSnapshot), [realNameSnapshot]);
+
+  const handleSubmitRealName = async () => {
+    if (!realName.trim() || !idNumber.trim()) {
+      toast({ title: '请补全实名认证信息', description: '真实姓名和身份证号均为必填项', variant: 'destructive' });
+      return;
+    }
+    if (!consentChecked) {
+      toast({ title: '请先勾选认证授权', description: '勾选授权后才能提交实名认证', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      await submitRealNameVerification.mutateAsync({
+        real_name: realName.trim(),
+        id_number: idNumber.trim(),
+        consent_checked: consentChecked,
+      });
+      toast({ title: REAL_NAME_COPY.submitSuccessTitle, description: REAL_NAME_COPY.submitSuccessDescription });
+    } catch (error: any) {
+      toast({ title: '实名认证提交失败', description: error.message || '请稍后重试', variant: 'destructive' });
+    }
+  };
+
+  const handleCancelRealName = async () => {
+    try {
+      await cancelRealNameVerification.mutateAsync();
+      toast({ title: REAL_NAME_COPY.cancelSuccessTitle, description: REAL_NAME_COPY.cancelSuccessDescription });
+    } catch (error: any) {
+      toast({ title: '撤销失败', description: error.message || '请稍后重试', variant: 'destructive' });
+    }
+  };
 
   const deletionStatusMeta = useMemo(() => {
     switch (accountDeletionStatus.applyStatus) {
@@ -333,6 +377,75 @@ export default function SettingsPage() {
               </div>
               <span className="text-sm">{format(new Date(profile.created_at), 'yyyy-MM-dd')}</span>
             </div>
+          </CardContent>
+        </Card>
+
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Shield className="h-4 w-4 text-primary" /> {REAL_NAME_COPY.sectionTitle}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm text-muted-foreground">{REAL_NAME_COPY.statusLabel}</span>
+                <span className="text-sm font-medium">{realNameViewModel.badgeText}</span>
+              </div>
+              <p className="text-sm text-muted-foreground">{realNameViewModel.description}</p>
+              {realNameViewModel.lastSubmittedAt && (
+                <p className="text-xs text-muted-foreground">{REAL_NAME_COPY.submittedAtLabel}：{format(new Date(realNameViewModel.lastSubmittedAt), 'yyyy-MM-dd HH:mm')}</p>
+              )}
+              {realNameViewModel.verifiedAt && (
+                <p className="text-xs text-muted-foreground">{REAL_NAME_COPY.verifiedAtLabel}：{format(new Date(realNameViewModel.verifiedAt), 'yyyy-MM-dd HH:mm')}</p>
+              )}
+              {realNameViewModel.rejectReasonText && (
+                <p className="text-xs text-destructive">{REAL_NAME_COPY.rejectReasonLabel}：{realNameViewModel.rejectReasonText}</p>
+              )}
+            </div>
+
+            {realNameActions.showSubmitForm && (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">{REAL_NAME_COPY.formDescription}</p>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{REAL_NAME_COPY.realNameLabel}</label>
+                  <Input value={realName} onChange={(e) => setRealName(e.target.value)} placeholder={REAL_NAME_COPY.realNamePlaceholder} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{REAL_NAME_COPY.idNumberLabel}</label>
+                  <Input value={idNumber} onChange={(e) => setIdNumber(e.target.value)} placeholder={REAL_NAME_COPY.idNumberPlaceholder} />
+                </div>
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Checkbox checked={consentChecked} onCheckedChange={(checked) => setConsentChecked(Boolean(checked))} />
+                  <span>{REAL_NAME_COPY.consentLabel}</span>
+                </label>
+                <Button
+                  type="button"
+                  onClick={handleSubmitRealName}
+                  disabled={submitRealNameVerification.isPending || (!realNameViewModel.canSubmit && !realNameViewModel.canResubmit)}
+                >
+                  {realNameActions.primaryLabel}
+                </Button>
+              </div>
+            )}
+
+            {!realNameActions.showSubmitForm && (
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" disabled>
+                  {realNameActions.primaryLabel}
+                </Button>
+                {realNameViewModel.canCancel && realNameActions.allowCancel && (
+                  <Button type="button" variant="outline" onClick={handleCancelRealName} disabled={cancelRealNameVerification.isPending}>
+                    撤销申请
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {realNameViewModel.status === 'rejected' && realNameViewModel.canResubmit && realNameActions.allowResubmit && (
+              <p className="text-xs text-muted-foreground">请根据驳回原因修正信息后重新提交。</p>
+            )}
           </CardContent>
         </Card>
 
