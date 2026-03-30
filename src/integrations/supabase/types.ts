@@ -492,6 +492,73 @@ export type Database = {
           },
         ]
       }
+      group_start_reminders: {
+        Row: {
+          created_at: string
+          group_id: string
+          id: string
+          last_error: string | null
+          notification_id: string | null
+          recipient_role: string
+          remind_at: string
+          scheduled_start_time: string
+          sent_at: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          group_id: string
+          id?: string
+          last_error?: string | null
+          notification_id?: string | null
+          recipient_role: string
+          remind_at: string
+          scheduled_start_time: string
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          group_id?: string
+          id?: string
+          last_error?: string | null
+          notification_id?: string | null
+          recipient_role?: string
+          remind_at?: string
+          scheduled_start_time?: string
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_start_reminders_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_start_reminders_notification_id_fkey"
+            columns: ["notification_id"]
+            isOneToOne: false
+            referencedRelation: "notifications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_start_reminders_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ip_rate_limits: {
         Row: {
           created_at: string
@@ -1215,6 +1282,7 @@ export type Database = {
       notification_type:
         | "application_update"
         | "group_cancelled"
+        | "group_start_reminder"
         | "credit_change"
         | "review_received"
         | "friend_request"
@@ -1361,6 +1429,7 @@ export const Constants = {
       notification_type: [
         "application_update",
         "group_cancelled",
+        "group_start_reminder",
         "credit_change",
         "review_received",
         "friend_request",

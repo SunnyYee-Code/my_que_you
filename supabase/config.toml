@@ -30,6 +30,9 @@ verify_jwt = false
 [functions.auto-clean-messages]
 verify_jwt = false
 
+[functions.auto-send-group-start-reminders]
+verify_jwt = false
+
 [functions.send-email-otp]
 verify_jwt = false
 

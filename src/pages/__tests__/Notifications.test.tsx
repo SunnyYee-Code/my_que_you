@@ -61,4 +61,28 @@ describe('NotificationsPage', () => {
     expect(mutateMock).toHaveBeenCalledWith('n1');
     expect(navigateMock).toHaveBeenCalledWith('/group/g1');
   });
+
+  it('renders group start reminder notifications and keeps click behavior', () => {
+    useNotificationsMock.mockReturnValue({
+      data: [
+        {
+          id: 'n2',
+          type: 'group_start_reminder',
+          title: '你加入的拼团即将开局',
+          content: '你报名的高新牌馆还有30分钟开局，请准时到场。',
+          created_at: new Date().toISOString(),
+          read: false,
+          link_to: '/group/g2',
+        },
+      ],
+      isLoading: false,
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByText('你加入的拼团即将开局'));
+
+    expect(screen.getByText('你报名的高新牌馆还有30分钟开局，请准时到场。')).toBeInTheDocument();
+    expect(mutateMock).toHaveBeenCalledWith('n2');
+    expect(navigateMock).toHaveBeenCalledWith('/group/g2');
+  });
 });
