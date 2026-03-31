@@ -1170,6 +1170,7 @@ export type Database = {
           punctuality: number
           reviewer_id: string
           skill: number
+          tags: string[]
           target_id: string
         }
         Insert: {
@@ -1181,6 +1182,7 @@ export type Database = {
           punctuality: number
           reviewer_id: string
           skill: number
+          tags?: string[]
           target_id: string
         }
         Update: {
@@ -1192,6 +1194,7 @@ export type Database = {
           punctuality?: number
           reviewer_id?: string
           skill?: number
+          tags?: string[]
           target_id?: string
         }
         Relationships: [

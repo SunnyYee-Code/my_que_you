@@ -128,6 +128,8 @@ describe('ReviewPage', () => {
     const user = userEvent.setup();
     const textarea = await screen.findByPlaceholderText('写点评价（选填）');
     await user.type(textarea, '配合很好');
+    await user.click(screen.getByRole('button', { name: '准时守约' }));
+    await user.click(screen.getByRole('button', { name: '沟通顺畅' }));
     fireEvent.change(screen.getAllByLabelText('slider')[0], { target: { value: '5' } });
     await user.click(screen.getByRole('button', { name: '提交评价' }));
 
@@ -138,6 +140,7 @@ describe('ReviewPage', () => {
       target_id: 'u2',
       punctuality: 5,
       comment: '配合很好',
+      tags: ['准时守约', '沟通顺畅'],
     })]);
     expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '评价已提交' }));
     expect(navigateMock).toHaveBeenCalledWith(-1);

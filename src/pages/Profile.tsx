@@ -8,7 +8,7 @@ import CreditBadge from '@/components/shared/CreditBadge';
 import StatusBadge from '@/components/shared/StatusBadge';
 import LoadingState from '@/components/shared/LoadingState';
 import ReportDialog from '@/components/shared/ReportDialog';
-import { useProfileById, useReviewsByTarget, useGroupsByMember, useCreditHistory } from '@/hooks/useProfile';
+import { useProfileById, useReviewsByTarget, useGroupsByMember, useCreditHistory, useFulfillmentProfiles } from '@/hooks/useProfile';
 import { useAuth } from '@/contexts/AuthContext';
 import { Settings, Edit, Star, Flag, TrendingUp, TrendingDown, History, ShieldCheck, ShieldAlert, AlertTriangle, Award, CheckCircle, Copy } from 'lucide-react';
 import { format } from 'date-fns';
@@ -26,6 +26,7 @@ export default function ProfilePage() {
   const { data: reviews = [] } = useReviewsByTarget(id);
   const { data: groups = [] } = useGroupsByMember(id);
   const { data: creditHistory = [] } = useCreditHistory(isSelf ? id : undefined);
+  const { data: fulfillmentProfiles = {} } = useFulfillmentProfiles(profile?.id ? [profile.id] : []);
   const { data: blacklistState } = useBlacklistStatus(id);
   const addToBlacklist = useAddToBlacklist();
   const removeFromBlacklist = useRemoveFromBlacklist();
@@ -36,6 +37,14 @@ export default function ProfilePage() {
   const avgPunctuality = reviews.length ? (reviews.reduce((s, r) => s + r.punctuality, 0) / reviews.length).toFixed(1) : '-';
   const avgAttitude = reviews.length ? (reviews.reduce((s, r) => s + r.attitude, 0) / reviews.length).toFixed(1) : '-';
   const avgSkill = reviews.length ? (reviews.reduce((s, r) => s + r.skill, 0) / reviews.length).toFixed(1) : '-';
+  const fulfillmentProfile = fulfillmentProfiles[profile.id] ?? {
+    completedCount: 0,
+    breachCount: 0,
+    trackedGroupCount: 0,
+    fulfillmentRate: null,
+    topPositiveTags: [],
+    topRiskTags: [],
+  };
 
   const handleAddToBlacklist = async () => {
     if (!id) return;
@@ -176,6 +185,49 @@ export default function ProfilePage() {
                   <p key={r.id} className="text-sm text-muted-foreground">"{r.comment}"</p>
                 ))}
               </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4 space-y-4">
+            <h2 className="font-semibold flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-primary" /> 履约档案
+            </h2>
+            <div className="grid grid-cols-3 gap-3 text-center">
+              {[
+                { label: '履约率', value: fulfillmentProfile.fulfillmentRate === null ? '暂无记录' : `${fulfillmentProfile.fulfillmentRate}%` },
+                { label: '已完成', value: `${fulfillmentProfile.completedCount}` },
+                { label: '失约记录', value: `${fulfillmentProfile.breachCount}` },
+              ].map(item => (
+                <div key={item.label} className="rounded-xl bg-muted/40 px-3 py-3">
+                  <div className="text-xl font-bold text-primary">{item.value}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">{item.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {fulfillmentProfile.trackedGroupCount === 0 && (
+              <p className="text-xs text-muted-foreground">暂无可统计的履约记录</p>
+            )}
+
+            {fulfillmentProfile.topPositiveTags.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">高频好评标签</p>
+                <div className="flex flex-wrap gap-2">
+                  {fulfillmentProfile.topPositiveTags.map(tag => (
+                    <span key={tag} className="rounded-full bg-primary/10 px-3 py-1 text-xs text-primary">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {fulfillmentProfile.topRiskTags.length > 0 && (
+              <p className="text-xs text-[hsl(var(--warning))]">
+                待关注：{fulfillmentProfile.topRiskTags.join('、')}
+              </p>
             )}
           </CardContent>
         </Card>

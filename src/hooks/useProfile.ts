@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { buildFulfillmentProfile } from '@/lib/review-insights';
 
 export function useProfileById(userId: string | undefined) {
   return useQuery({
@@ -98,6 +99,79 @@ export function useGroupsByMember(userId: string | undefined) {
         .order('start_time', { ascending: false });
       if (error) throw error;
       return data;
+    },
+  });
+}
+
+export function useFulfillmentProfiles(userIds: string[]) {
+  return useQuery({
+    queryKey: ['fulfillment-profiles', [...userIds].sort().join(',')],
+    enabled: userIds.length > 0,
+    queryFn: async () => {
+      const uniqueUserIds = [...new Set(userIds.filter(Boolean))];
+      if (uniqueUserIds.length === 0) {
+        return {} as Record<string, ReturnType<typeof buildFulfillmentProfile>>;
+      }
+
+      const [reviewsResult, membershipsResult, exitsResult, hostedGroupsResult] = await Promise.all([
+        supabase
+          .from('reviews')
+          .select('id, target_id, tags')
+          .in('target_id', uniqueUserIds),
+        supabase
+          .from('group_members')
+          .select('user_id, group_id')
+          .in('user_id', uniqueUserIds),
+        supabase
+          .from('group_member_exits')
+          .select('id, user_id, exit_type')
+          .in('user_id', uniqueUserIds),
+        supabase
+          .from('groups')
+          .select('id, status, host_id')
+          .in('host_id', uniqueUserIds)
+          .eq('status', 'COMPLETED'),
+      ]);
+
+      if (reviewsResult.error) throw reviewsResult.error;
+      if (membershipsResult.error) throw membershipsResult.error;
+      if (exitsResult.error) throw exitsResult.error;
+      if (hostedGroupsResult.error) throw hostedGroupsResult.error;
+
+      const groupIds = [...new Set((membershipsResult.data ?? []).map(item => item.group_id))];
+      let groups: Array<{ id: string; status: string | null; host_id: string | null }> = [];
+
+      if (groupIds.length > 0) {
+        const groupsResult = await supabase
+          .from('groups')
+          .select('id, status, host_id')
+          .in('id', groupIds);
+
+        if (groupsResult.error) throw groupsResult.error;
+        groups = (groupsResult.data ?? []).filter(group => group.status === 'COMPLETED');
+      }
+
+      const groupsById = new Map(groups.map(group => [group.id, group]));
+
+      return uniqueUserIds.reduce((acc, userId) => {
+        const memberGroups = (membershipsResult.data ?? [])
+          .filter(item => item.user_id === userId)
+          .map(item => groupsById.get(item.group_id))
+          .filter(Boolean) as Array<{ id: string; status: string | null; host_id: string | null }>;
+        const hostedGroups = (hostedGroupsResult.data ?? []).filter(group => group.host_id === userId);
+        const userGroups = [...memberGroups, ...hostedGroups].filter(
+          (group, index, list) => list.findIndex(item => item.id === group.id) === index,
+        );
+
+        acc[userId] = buildFulfillmentProfile({
+          userId,
+          reviews: reviewsResult.data ?? [],
+          groups: userGroups,
+          exits: exitsResult?.data ?? [],
+        });
+
+        return acc;
+      }, {} as Record<string, ReturnType<typeof buildFulfillmentProfile>>);
     },
   });
 }

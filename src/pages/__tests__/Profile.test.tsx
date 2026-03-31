@@ -22,6 +22,18 @@ const profileState = vi.hoisted(() => ({
 const reviewsState = vi.hoisted(() => ({ data: [], isLoading: false }));
 const groupsState = vi.hoisted(() => ({ data: [], isLoading: false }));
 const creditHistoryState = vi.hoisted(() => ({ data: [], isLoading: false }));
+const fulfillmentProfilesState = vi.hoisted(() => ({
+  data: {
+    'user-2': {
+      completedCount: 2,
+      breachCount: 1,
+      trackedGroupCount: 3,
+      fulfillmentRate: 67,
+      topPositiveTags: ['准时守约', '沟通顺畅'],
+      topRiskTags: ['迟到'],
+    },
+  },
+}));
 const blacklistStatusState = vi.hoisted(() => ({
   data: {
     isBlocked: false,
@@ -57,6 +69,7 @@ vi.mock('@/hooks/useProfile', () => ({
   useReviewsByTarget: () => reviewsState,
   useGroupsByMember: () => groupsState,
   useCreditHistory: () => creditHistoryState,
+  useFulfillmentProfiles: () => fulfillmentProfilesState,
 }));
 vi.mock('@/hooks/useBlacklist', () => ({
   useBlacklistStatus: () => blacklistStatusState,
@@ -77,6 +90,25 @@ function renderPage() {
 describe('ProfilePage blacklist actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    reviewsState.data = [
+      { id: 'r1', target_id: 'user-2', comment: '人很好', tags: ['准时守约', '沟通顺畅'], punctuality: 5, attitude: 5, skill: 4 },
+      { id: 'r2', target_id: 'user-2', comment: '组织清晰', tags: ['准时守约', '新手友好'], punctuality: 4, attitude: 5, skill: 4 },
+    ];
+    groupsState.data = [
+      { id: 'g1', status: 'COMPLETED', start_time: '2026-03-29T10:00:00.000Z' },
+      { id: 'g2', status: 'COMPLETED', start_time: '2026-03-28T10:00:00.000Z' },
+      { id: 'g3', status: 'CANCELLED', start_time: '2026-03-27T10:00:00.000Z' },
+    ];
+    fulfillmentProfilesState.data = {
+      'user-2': {
+        completedCount: 2,
+        breachCount: 1,
+        trackedGroupCount: 3,
+        fulfillmentRate: 67,
+        topPositiveTags: ['准时守约', '沟通顺畅'],
+        topRiskTags: ['迟到'],
+      },
+    };
     blacklistStatusState.data = {
       isBlocked: false,
       relationship: 'none',
@@ -98,5 +130,34 @@ describe('ProfilePage blacklist actions', () => {
         description: '你们之间的私聊和好友互动已被屏蔽。',
       });
     });
+  });
+
+  it('renders fulfillment archive summary and tag insights', () => {
+    renderPage();
+
+    expect(screen.getByText('履约档案')).toBeInTheDocument();
+    expect(screen.getByText('67%')).toBeInTheDocument();
+    expect(screen.getByText('准时守约')).toBeInTheDocument();
+    expect(screen.getByText('沟通顺畅')).toBeInTheDocument();
+    expect(screen.getByText('失约记录')).toBeInTheDocument();
+    expect(screen.getByText('待关注：迟到')).toBeInTheDocument();
+  });
+
+  it('shows empty fulfillment copy for users without tracked history', () => {
+    fulfillmentProfilesState.data = {
+      'user-2': {
+        completedCount: 0,
+        breachCount: 0,
+        trackedGroupCount: 0,
+        fulfillmentRate: null,
+        topPositiveTags: [],
+        topRiskTags: [],
+      },
+    };
+
+    renderPage();
+
+    expect(screen.getByText('暂无记录')).toBeInTheDocument();
+    expect(screen.getByText('暂无可统计的履约记录')).toBeInTheDocument();
   });
 });

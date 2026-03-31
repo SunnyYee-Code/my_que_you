@@ -8,6 +8,7 @@ import EmptyState from '@/components/shared/EmptyState';
 import LoadingState from '@/components/shared/LoadingState';
 import { useAuth } from '@/contexts/AuthContext';
 import { useJoinRequests, useUpdateRequestStatus } from '@/hooks/useGroups';
+import { useFulfillmentProfiles } from '@/hooks/useProfile';
 import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, Check, X } from 'lucide-react';
 
@@ -16,6 +17,8 @@ export default function HostRequestsPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { data: apps = [], isLoading } = useJoinRequests();
+  const applicantIds = apps.map(app => app.user_id);
+  const { data: fulfillmentProfiles = {} } = useFulfillmentProfiles(applicantIds);
   const updateStatus = useUpdateRequestStatus();
 
   if (!user) { navigate('/login'); return null; }
@@ -82,6 +85,29 @@ export default function HostRequestsPage() {
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">申请加入：{group.address}</p>
+                    {fulfillmentProfiles[app.user_id] && (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-xs text-muted-foreground">
+                          {fulfillmentProfiles[app.user_id].fulfillmentRate === null
+                            ? '履约记录不足'
+                            : `履约率 ${fulfillmentProfiles[app.user_id].fulfillmentRate}% · 已完成 ${fulfillmentProfiles[app.user_id].completedCount} 场`}
+                        </p>
+                        {fulfillmentProfiles[app.user_id].topPositiveTags.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {fulfillmentProfiles[app.user_id].topPositiveTags.map(tag => (
+                              <span key={tag} className="rounded-full bg-primary/10 px-2.5 py-1 text-xs text-primary">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {fulfillmentProfiles[app.user_id].topRiskTags.length > 0 && (
+                          <p className="text-xs text-[hsl(var(--warning))]">
+                            待关注：{fulfillmentProfiles[app.user_id].topRiskTags.join('、')}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               );

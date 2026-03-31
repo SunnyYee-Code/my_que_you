@@ -14,6 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Clock, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { REVIEW_TAG_OPTIONS, normalizeReviewTags } from '@/lib/review-insights';
 
 type ReviewData = {
   targetId: string;
@@ -21,6 +22,7 @@ type ReviewData = {
   attitude: number;
   skill: number;
   comment: string;
+  tags: string[];
 };
 
 function useCountdown(targetDate: Date) {
@@ -84,6 +86,7 @@ export default function ReviewPage() {
         attitude: 3,
         skill: 3,
         comment: '',
+        tags: [],
       })));
     }
   }, [otherMembers.length]);
@@ -110,6 +113,7 @@ export default function ReviewPage() {
         attitude: r.attitude,
         skill: r.skill,
         comment: r.comment || null,
+        tags: normalizeReviewTags(r.tags),
       }));
       const { error } = await supabase.from('reviews').insert(inserts);
       if (error) throw error;
@@ -208,6 +212,35 @@ export default function ReviewPage() {
                       onChange={e => updateReview(member.user_id, 'comment', e.target.value)}
                       maxLength={200}
                     />
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span>标签评价</span>
+                        <span className="text-xs text-muted-foreground">最多 3 个</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {REVIEW_TAG_OPTIONS.map(tag => {
+                          const active = review.tags.includes(tag);
+
+                          return (
+                            <Button
+                              key={tag}
+                              type="button"
+                              size="sm"
+                              variant={active ? 'default' : 'outline'}
+                              onClick={() => {
+                                const nextTags = active
+                                  ? review.tags.filter(item => item !== tag)
+                                  : normalizeReviewTags([...review.tags, tag]);
+                                updateReview(member.user_id, 'tags', nextTags);
+                              }}
+                            >
+                              {tag}
+                            </Button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </CardContent>
                 </Card>
               );
