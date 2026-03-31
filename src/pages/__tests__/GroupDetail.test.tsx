@@ -8,6 +8,16 @@ import GroupDetailPage from '../GroupDetail';
 const navigateMock = vi.fn();
 const toastMock = vi.fn();
 const invalidateQueriesMock = vi.fn();
+const clipboardWriteTextMock = vi.fn();
+const navigatorShareMock = vi.fn();
+const navigatorCanShareMock = vi.fn();
+const createObjectURLMock = vi.fn(() => 'blob:poster');
+const revokeObjectURLMock = vi.fn();
+const anchorClickMock = vi.fn();
+const execCommandMock = vi.fn(() => true);
+const drawImageMock = vi.fn();
+const originalCreateElement = document.createElement.bind(document);
+const OriginalURL = URL;
 const groupState = vi.hoisted(() => ({ data: null as any, isLoading: false }));
 const authState = vi.hoisted(() => ({ user: { id: 'user-1' } as any }));
 const realNameState = vi.hoisted(() => ({
@@ -132,6 +142,7 @@ function buildGroup(overrides: any = {}) {
 
 describe('GroupDetailPage', () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     navigateMock.mockReset();
     toastMock.mockReset();
     invalidateQueriesMock.mockReset();
@@ -155,6 +166,76 @@ describe('GroupDetailPage', () => {
     realNameState.isLoading = false;
     realNameState.isError = false;
     vi.spyOn(window, 'open').mockImplementation(() => null);
+    clipboardWriteTextMock.mockReset();
+    navigatorShareMock.mockReset();
+    navigatorCanShareMock.mockReset();
+    createObjectURLMock.mockClear();
+    revokeObjectURLMock.mockClear();
+    anchorClickMock.mockClear();
+    execCommandMock.mockClear();
+    drawImageMock.mockClear();
+    Object.defineProperty(window.navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: clipboardWriteTextMock,
+      },
+    });
+    Object.defineProperty(window.navigator, 'share', {
+      configurable: true,
+      value: navigatorShareMock,
+    });
+    Object.defineProperty(window.navigator, 'canShare', {
+      configurable: true,
+      value: navigatorCanShareMock,
+    });
+    class MockURL extends OriginalURL {
+      static createObjectURL = createObjectURLMock;
+      static revokeObjectURL = revokeObjectURLMock;
+    }
+    vi.stubGlobal('URL', MockURL);
+    vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
+      const element = originalCreateElement(tagName);
+      if (tagName === 'a') {
+        Object.defineProperty(element, 'click', {
+          value: anchorClickMock,
+        });
+      }
+      if (tagName === 'canvas') {
+        Object.defineProperty(element, 'getContext', {
+          value: vi.fn(() => ({ drawImage: drawImageMock })),
+        });
+        Object.defineProperty(element, 'toBlob', {
+          value: (callback: (blob: Blob | null) => void) => callback(new Blob(['png'], { type: 'image/png' })),
+        });
+      }
+      return element as any;
+    });
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommandMock,
+    });
+    class MockImage {
+      onload: null | (() => void) = null;
+      onerror: null | (() => void) = null;
+      decoding = 'async';
+      private _src = '';
+
+      set src(value: string) {
+        this._src = value;
+        queueMicrotask(() => {
+          this.onload?.();
+        });
+      }
+
+      get src() {
+        return this._src;
+      }
+
+      decode() {
+        return Promise.resolve();
+      }
+    }
+    vi.stubGlobal('Image', MockImage as unknown as typeof Image);
   });
 
   it('submits join request for non-member user', async () => {
@@ -182,6 +263,88 @@ describe('GroupDetailPage', () => {
 
     expect(screen.getByText('紧急补位中')).toBeInTheDocument();
     expect(screen.getByText(/距开局/)).toBeInTheDocument();
+  });
+
+  it('opens share poster dialog and copies poster text', async () => {
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: '分享海报' }));
+
+    expect(await screen.findByText('拼团分享海报')).toBeInTheDocument();
+    expect(screen.getAllByText(/还差1人/).length).toBeGreaterThan(0);
+    expect(screen.getByText('测试牌馆')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '复制文案' }));
+
+    await waitFor(() => {
+      expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '分享文案已复制' }));
+    });
+    if (clipboardWriteTextMock.mock.calls.length > 0) {
+      expect(clipboardWriteTextMock).toHaveBeenCalledWith(expect.stringContaining('/group/group-1?from=poster'));
+    }
+  });
+
+  it('shares poster with native share api when available', async () => {
+    navigatorShareMock.mockResolvedValue(undefined);
+    navigatorCanShareMock.mockReturnValue(true);
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: '分享海报' }));
+    await user.click(await screen.findByRole('button', { name: '系统分享' }));
+
+    await waitFor(() => expect(navigatorShareMock).toHaveBeenCalledTimes(1));
+    expect(navigatorShareMock).toHaveBeenCalledWith(expect.objectContaining({
+      title: expect.stringContaining('房主'),
+      text: expect.stringContaining('测试牌馆'),
+      files: expect.any(Array),
+    }));
+    expect(createObjectURLMock).not.toHaveBeenCalled();
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '分享已发起' }));
+  });
+
+  it('falls back to text-only share when file sharing is unsupported', async () => {
+    navigatorShareMock.mockResolvedValue(undefined);
+    navigatorCanShareMock.mockReturnValue(false);
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: '分享海报' }));
+    await user.click(await screen.findByRole('button', { name: '系统分享' }));
+
+    await waitFor(() => expect(navigatorShareMock).toHaveBeenCalledTimes(1));
+    expect(navigatorShareMock).toHaveBeenCalledWith(expect.objectContaining({
+      title: expect.stringContaining('房主'),
+      text: expect.stringContaining('/group/group-1?from=poster'),
+      url: expect.stringContaining('/group/group-1?from=poster'),
+    }));
+    expect(navigatorShareMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      files: expect.any(Array),
+    }));
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '已降级为链接分享' }));
+  });
+
+  it('downloads poster file for local save', async () => {
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: '分享海报' }));
+    await user.click(await screen.findByRole('button', { name: '保存海报' }));
+
+    expect(createObjectURLMock).toHaveBeenCalledTimes(1);
+    expect(anchorClickMock).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURLMock).toHaveBeenCalledWith('blob:poster');
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '海报已开始下载' }));
+  });
+
+  it('hides share poster action from non-members', () => {
+    authState.user = { id: 'outsider-1' };
+    groupState.data = buildGroup({ members: [{ user_id: 'host-1', profiles: { nickname: '房主', credit_score: 98 } }] });
+
+    renderPage();
+
+    expect(screen.queryByRole('button', { name: '分享海报' })).not.toBeInTheDocument();
   });
 
   it('requires leave reason within 60 minutes and deducts credit after leaving', async () => {

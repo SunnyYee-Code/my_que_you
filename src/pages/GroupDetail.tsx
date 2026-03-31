@@ -13,12 +13,12 @@ import { useGroupDetail } from '@/hooks/useGroups';
 import { useRealNameVerification } from '@/hooks/useRealNameVerification';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { ArrowLeft, MapPin, Clock, Users, Navigation, MessageCircle, AlertTriangle, Crown, ChevronRight, HelpCircle, UserMinus } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock, Users, Navigation, MessageCircle, AlertTriangle, Crown, ChevronRight, HelpCircle, UserMinus, Share2, Copy, Download } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
@@ -26,6 +26,11 @@ import AddFriendButton from '@/components/friends/AddFriendButton';
 import InviteFriendsDialog from '@/components/friends/InviteFriendsDialog';
 import { REAL_NAME_SCENES } from '@/constants/realName';
 import { getGroupEmergencyFillMeta } from '@/lib/group-emergency-fill';
+import {
+  buildGroupSharePosterModel,
+  createGroupSharePosterBlob,
+  createGroupSharePosterFile,
+} from '@/lib/group-share-poster';
 import {
   createDefaultRealNameSnapshot,
   shouldBlockByRestrictionLevel,
@@ -43,12 +48,27 @@ function throwIfSupabaseError(result: { error: unknown } | null | undefined, fal
   }
 }
 
+function copyTextFallback(text: string) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+
+  const copied = document.execCommand('copy');
+  document.body.removeChild(textarea);
+  return copied;
+}
+
 export default function GroupDetailPage() {
   const [kickDialogOpen, setKickDialogOpen] = useState(false);
   const [kickTargetId, setKickTargetId] = useState<string | null>(null);
   const [kickReason, setKickReason] = useState('');
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
   const [leaveReason, setLeaveReason] = useState('');
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -138,6 +158,87 @@ export default function GroupDetailPage() {
   };
 
   const isWithin60Min = startDate.getTime() - Date.now() < 60 * 60 * 1000;
+  const sharePosterModel = buildGroupSharePosterModel({
+    id: group.id,
+    address: group.address,
+    start_time: group.start_time,
+    end_time: group.end_time,
+    total_slots: group.total_slots,
+    needed_slots: group.needed_slots,
+    play_style: group.play_style,
+    game_note: group.game_note,
+    hostNickname: host?.nickname,
+  }, window.location.origin);
+
+  const handleCopyShareText = async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(sharePosterModel.shareText);
+      } else {
+        const copied = copyTextFallback(sharePosterModel.shareText);
+
+        if (!copied) {
+          throw new Error('当前环境不支持复制');
+        }
+      }
+      toast({ title: '分享文案已复制', description: '可以直接发给牌友或群聊。' });
+    } catch (error) {
+      toast({ title: '复制失败', description: getErrorMessage(error, '请稍后重试'), variant: 'destructive' });
+    }
+  };
+
+  const handleNativeShare = async () => {
+    if (typeof navigator.share !== 'function') {
+      toast({ title: '当前浏览器不支持系统分享', description: '你可以先复制文案或保存海报。', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      const file = await createGroupSharePosterFile(sharePosterModel);
+      const fileSharePayload = {
+        title: sharePosterModel.title,
+        text: sharePosterModel.shareText,
+        files: [file],
+      };
+      const canShareFiles = typeof navigator.canShare === 'function'
+        ? navigator.canShare(fileSharePayload)
+        : false;
+
+      if (canShareFiles) {
+        await navigator.share(fileSharePayload);
+        toast({ title: '分享已发起', description: '已拉起系统分享面板。' });
+        return;
+      }
+
+      await navigator.share({
+        title: sharePosterModel.title,
+        text: sharePosterModel.shareText,
+        url: sharePosterModel.shareLink,
+      });
+      toast({ title: '已降级为链接分享', description: '当前环境不支持文件分享，已改为发送文案与链接。' });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
+
+      toast({ title: '系统分享失败', description: getErrorMessage(error, '请稍后重试'), variant: 'destructive' });
+    }
+  };
+
+  const handleDownloadPoster = async () => {
+    try {
+      const blob = await createGroupSharePosterBlob(sharePosterModel);
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = sharePosterModel.fileName;
+      link.click();
+      URL.revokeObjectURL(objectUrl);
+      toast({ title: '海报已开始下载', description: '可保存后转发给牌友。' });
+    } catch (error) {
+      toast({ title: '保存海报失败', description: getErrorMessage(error, '请稍后重试'), variant: 'destructive' });
+    }
+  };
 
   const handleLeave = async () => {
     try {
@@ -520,6 +621,51 @@ export default function GroupDetailPage() {
 
         {/* Actions */}
         <div className="space-y-2 pb-4">
+          {(isMember || isHost) && group.status === 'OPEN' && (
+            <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="w-full gap-2">
+                  <Share2 className="h-4 w-4" /> 分享海报
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[420px]">
+                <DialogHeader>
+                  <DialogTitle>拼团分享海报</DialogTitle>
+                  <DialogDescription>
+                    生成可保存、可转发的拼团海报，方便你快速邀请牌友补位。
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="overflow-hidden rounded-2xl border border-border bg-muted/30">
+                    <img src={sharePosterModel.svgDataUrl} alt="拼团分享海报预览" className="w-full" />
+                  </div>
+                  <div className="rounded-xl bg-muted/40 p-3 text-sm text-muted-foreground">
+                    <p className="font-medium text-foreground">{sharePosterModel.title}</p>
+                    <p className="mt-1">{sharePosterModel.summary}</p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-background p-3">
+                    <ul className="space-y-2 text-sm text-muted-foreground">
+                      {sharePosterModel.facts.map((fact) => (
+                        <li key={fact}>{fact}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+                <DialogFooter className="gap-2 sm:justify-between">
+                  <Button type="button" variant="outline" className="gap-2" onClick={handleCopyShareText}>
+                    <Copy className="h-4 w-4" /> 复制文案
+                  </Button>
+                  <Button type="button" variant="outline" className="gap-2" onClick={handleNativeShare}>
+                    <Share2 className="h-4 w-4" /> 系统分享
+                  </Button>
+                  <Button type="button" className="gap-2" onClick={handleDownloadPoster}>
+                    <Download className="h-4 w-4" /> 保存海报
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+
           {!isMember && !isHost && group.status === 'OPEN' && user && !realNameLoading && effectiveRealNameSnapshot && showJoinRealNameGuard && (
             <RealNameRestrictionGuard snapshot={effectiveRealNameSnapshot} scene={REAL_NAME_SCENES.GROUP_JOIN} />
           )}
