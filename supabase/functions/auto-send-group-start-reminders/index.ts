@@ -4,6 +4,7 @@ import {
   buildGroupStartReminderNotification,
   buildGroupStartReminderPlans,
   deliverGroupStartReminder,
+  isAuthorizedReminderSchedulerRequest,
   resolveGroupStartReminderStatus,
   type GroupStartReminderGroupStatus,
   type GroupStartReminderPlan,
@@ -173,6 +174,13 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const authHeader = req.headers.get("authorization");
+    if (!isAuthorizedReminderSchedulerRequest(authHeader, serviceRoleKey)) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const admin = createClient(supabaseUrl, serviceRoleKey);
     const store = createReminderDeliveryStore(admin);
 

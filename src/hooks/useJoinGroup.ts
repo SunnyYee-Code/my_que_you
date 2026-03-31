@@ -2,6 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { REAL_NAME_SCENES, adaptRealNameSnapshot } from '@/constants/realName';
+import {
+  shouldBlockByRestrictionLevel,
+  shouldShowRealNameGuard,
+} from '@/lib/real-name-verification';
 
 /**
  * Check if the current user can join a specific group.
@@ -80,7 +85,32 @@ export function useQuickJoin() {
   return useMutation({
     mutationFn: async ({ groupId, hostId }: { groupId: string; hostId: string }) => {
       if (!user) throw new Error('请先登录');
-      
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) {
+        throw new Error('请先登录');
+      }
+
+      const realNameResponse = await fetch('/functions/v1/real-name-verification/status', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      const realNamePayload = await realNameResponse.json().catch(() => ({}));
+      if (!realNameResponse.ok) {
+        throw new Error(realNamePayload?.message || realNamePayload?.error || '实名认证状态获取失败，请稍后重试');
+      }
+
+      const realNameSnapshot = adaptRealNameSnapshot(realNamePayload);
+      const shouldGuardJoin = shouldShowRealNameGuard(realNameSnapshot, REAL_NAME_SCENES.GROUP_JOIN);
+      const shouldBlockJoin = shouldGuardJoin && shouldBlockByRestrictionLevel(realNameSnapshot.restriction_level);
+      if (shouldBlockJoin) {
+        throw new Error('当前场景需先完成实名认证后继续。');
+      }
+
       // Check daily join limit
       const { data: limitCheck, error: limitError } = await supabase.functions.invoke('check-group-limits', {
         body: { action: 'check_join' },

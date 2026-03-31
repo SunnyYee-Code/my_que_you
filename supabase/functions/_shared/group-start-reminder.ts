@@ -59,6 +59,14 @@ export interface ReminderDeliveryStore {
   }): Promise<void>;
 }
 
+export function isAuthorizedReminderSchedulerRequest(
+  authHeader: string | null,
+  serviceRoleKey: string | null | undefined,
+) {
+  if (!serviceRoleKey) return false;
+  return authHeader === `Bearer ${serviceRoleKey}`;
+}
+
 export function isSchedulableGroupStartReminderStatus(status: GroupStartReminderGroupStatus) {
   return status === "OPEN" || status === "FULL";
 }

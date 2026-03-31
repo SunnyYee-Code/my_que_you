@@ -1,13 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DEFAULT_ACCOUNT_DELETION_SNAPSHOT, type AccountDeletionSnapshot } from '@/constants/accountDeletion';
+import { supabase } from '@/integrations/supabase/client';
 
 const ACCOUNT_DELETION_QUERY_KEY = ['account-deletion-status'];
 
 async function invokeAccountDeletion<T>(action: 'status' | 'apply' | 'cancel', method: 'GET' | 'POST'): Promise<T> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+  if (!accessToken) {
+    throw new Error('请先登录');
+  }
+
   const response = await fetch(`/functions/v1/account-deletion/${action}`, {
     method,
     headers: {
       'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
     },
     body: method === 'POST' ? JSON.stringify({}) : undefined,
   });
