@@ -10,6 +10,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from '@/contexts/AuthContext'
 import { ArrowLeft, Info, Mail, Phone, AtSign } from 'lucide-react'
+import { normalizeInviteCode, validateInviteCode } from '@/lib/invite-code'
 
 const isDev = import.meta.env.DEV
 
@@ -34,6 +35,7 @@ export default function LoginPage() {
   const [regPhone, setRegPhone] = useState('')
   const [regEmail, setRegEmail] = useState('')
   const [regPassword, setRegPassword] = useState('')
+  const [regInviteCode, setRegInviteCode] = useState('')
 
   const { toast } = useToast()
   const navigate = useNavigate()
@@ -259,6 +261,7 @@ export default function LoginPage() {
             type: 'register',
             password: regPassword,
             phone: registerType === 'phone' ? regPhone : undefined,
+            invite_code: regInviteCode.trim() ? normalizeInviteCode(regInviteCode) : undefined,
           },
         })
         if (error || data?.error) {
@@ -278,6 +281,13 @@ export default function LoginPage() {
         if (signInError) {
           toast({ title: '注册成功，但登录失败', description: signInError.message, variant: 'destructive' })
         } else {
+          if (data?.invite_binding_error) {
+            toast({
+              title: '注册成功，但邀请码绑定失败',
+              description: data.invite_binding_error,
+              variant: 'destructive',
+            })
+          }
           toast({ title: '注册成功，欢迎加入雀友聚！' })
         }
       } else {
@@ -510,6 +520,15 @@ export default function LoginPage() {
                   type="password"
                   value={regPassword}
                   onChange={e => setRegPassword(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">邀请码</label>
+                <Input
+                  placeholder="请输入邀请码（选填）"
+                  value={regInviteCode}
+                  onChange={e => setRegInviteCode(e.target.value)}
                 />
               </div>
 

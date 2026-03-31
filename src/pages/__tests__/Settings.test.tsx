@@ -16,6 +16,8 @@ const useSubmitRealNameVerificationMock = vi.fn();
 const useCancelRealNameVerificationMock = vi.fn();
 const useBlacklistMock = vi.fn();
 const useRemoveFromBlacklistMock = vi.fn();
+const useInviteCodeSnapshotMock = vi.fn();
+const useBindInviteCodeMock = vi.fn();
 const fromMock = vi.fn();
 const updateDbMock = vi.fn();
 const eqMock = vi.fn();
@@ -28,6 +30,7 @@ const cancelDeletionMutateAsyncMock = vi.fn();
 const submitRealNameMutateAsyncMock = vi.fn();
 const cancelRealNameMutateAsyncMock = vi.fn();
 const removeFromBlacklistMutateAsyncMock = vi.fn();
+const bindInviteCodeMutateAsyncMock = vi.fn();
 
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
@@ -52,6 +55,10 @@ vi.mock('@/hooks/useAccountDeletion', () => ({
 vi.mock('@/hooks/useBlacklist', () => ({
   useBlacklist: () => useBlacklistMock(),
   useRemoveFromBlacklist: () => useRemoveFromBlacklistMock(),
+}));
+vi.mock('@/hooks/useInviteCode', () => ({
+  useInviteCodeSnapshot: () => useInviteCodeSnapshotMock(),
+  useBindInviteCode: () => useBindInviteCodeMock(),
 }));
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
@@ -94,6 +101,7 @@ describe('SettingsPage', () => {
     submitRealNameMutateAsyncMock.mockResolvedValue({});
     cancelRealNameMutateAsyncMock.mockResolvedValue({});
     removeFromBlacklistMutateAsyncMock.mockResolvedValue(undefined);
+    bindInviteCodeMutateAsyncMock.mockResolvedValue(undefined);
     useAuthMock.mockReturnValue({
       user: { id: 'u1', email: 'user@example.com' },
       profile: { nickname: '老雀友', phone: '13800138000', credit_score: 95, created_at: new Date().toISOString() },
@@ -154,6 +162,23 @@ describe('SettingsPage', () => {
       isLoading: false,
     });
     useRemoveFromBlacklistMock.mockReturnValue({ isPending: false, mutateAsync: removeFromBlacklistMutateAsyncMock });
+    useInviteCodeSnapshotMock.mockReturnValue({
+      data: {
+        inviteCode: 'UID0001A',
+        canBind: true,
+        invitedCount: 2,
+        invitedBy: null,
+        recentInvites: [
+          {
+            inviteeId: 'u9',
+            inviteeNickname: '牌友新同学',
+            boundAt: '2026-03-31T09:30:00.000Z',
+          },
+        ],
+      },
+      isLoading: false,
+    });
+    useBindInviteCodeMock.mockReturnValue({ isPending: false, mutateAsync: bindInviteCodeMutateAsyncMock });
     updateProfileHookMock.mockReturnValue({ isPending: false, mutateAsync: vi.fn() });
     eqMock.mockResolvedValue({ error: null });
     updateDbMock.mockReturnValue({ eq: eqMock });
@@ -430,5 +455,49 @@ describe('SettingsPage', () => {
         description: '该用户已恢复正常互动权限。',
       });
     });
+  });
+
+  it('renders invite-code snapshot and binds inviter code once', async () => {
+    renderPage();
+
+    expect(screen.getByText('邀请码')).toBeInTheDocument();
+    expect(screen.getByText('UID0001A')).toBeInTheDocument();
+    expect(screen.getByText('已邀请 2 人')).toBeInTheDocument();
+    expect(screen.getByText('牌友新同学')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('输入邀请你的邀请码'), { target: { value: ' host001 ' } });
+    fireEvent.click(screen.getByRole('button', { name: '绑定邀请码' }));
+
+    await waitFor(() => {
+      expect(bindInviteCodeMutateAsyncMock).toHaveBeenCalledWith({ inviteCode: 'HOST001' });
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '邀请码绑定成功',
+        description: '邀请关系已记录，可用于后续增长归因。',
+      });
+    });
+  });
+
+  it('shows bound inviter info and blocks repeated invite-code binding', () => {
+    useInviteCodeSnapshotMock.mockReturnValue({
+      data: {
+        inviteCode: 'UID0001A',
+        canBind: false,
+        invitedCount: 2,
+        invitedBy: {
+          inviteCode: 'HOST001',
+          inviterId: 'u-host',
+          inviterNickname: '老房主',
+          boundAt: '2026-03-31T08:00:00.000Z',
+        },
+        recentInvites: [],
+      },
+      isLoading: false,
+    });
+
+    renderPage();
+
+    expect(screen.getByText(/已绑定邀请人：老房主/)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('输入邀请你的邀请码')).toBeDisabled();
+    expect(screen.getByRole('button', { name: '绑定邀请码' })).toBeDisabled();
   });
 });

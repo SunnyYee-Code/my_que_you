@@ -51,12 +51,22 @@ vi.mock('@/components/ui/input-otp', () => ({
   InputOTPGroup: ({ children }: any) => <div>{children}</div>,
   InputOTPSlot: () => <span />,
 }));
-vi.mock('@/components/ui/tabs', () => ({
-  Tabs: ({ children }: any) => <div>{children}</div>,
-  TabsList: ({ children }: any) => <div>{children}</div>,
-  TabsTrigger: ({ children, value, onClick }: any) => <button type="button" data-value={value} onClick={onClick}>{children}</button>,
-  TabsContent: ({ children }: any) => <div>{children}</div>,
-}));
+vi.mock('@/components/ui/tabs', () => {
+  const React = require('react');
+  const Ctx = React.createContext({ value: 'login', setValue: (_value: string) => {} });
+  return {
+    Tabs: ({ value, onValueChange, children }: any) => <Ctx.Provider value={{ value, setValue: onValueChange }}>{children}</Ctx.Provider>,
+    TabsList: ({ children }: any) => <div>{children}</div>,
+    TabsTrigger: ({ children, value }: any) => {
+      const ctx = React.useContext(Ctx);
+      return <button type="button" data-value={value} onClick={() => ctx.setValue(value)}>{children}</button>;
+    },
+    TabsContent: ({ children, value }: any) => {
+      const ctx = React.useContext(Ctx);
+      return ctx.value === value ? <div>{children}</div> : null;
+    },
+  };
+});
 
 function renderPage() {
   return render(<MemoryRouter><LoginPage /></MemoryRouter>);
@@ -149,5 +159,68 @@ describe('LoginPage', () => {
       expect(invokeMock).toHaveBeenNthCalledWith(3, 'send-email-otp', { body: { email: 'new@example.com', type: 'register' } });
     });
     expect(await screen.findByText('邮箱验证')).toBeInTheDocument();
+  });
+
+  it('passes normalized invite code when verifying registration otp', async () => {
+    invokeMock
+      .mockResolvedValueOnce({ data: { available: true }, error: null })
+      .mockResolvedValueOnce({ data: { allowed: true }, error: null })
+      .mockResolvedValueOnce({ data: { ok: true }, error: null })
+      .mockResolvedValueOnce({ data: { success: true, user_id: 'u-new' }, error: null })
+      .mockResolvedValueOnce({ data: { ok: true }, error: null });
+    signInWithPasswordMock.mockResolvedValueOnce({ error: null });
+
+    renderPage();
+    fireEvent.click(screen.getAllByRole('button', { name: '注册' })[0]);
+    fireEvent.click(screen.getByLabelText('agree-register'));
+    fireEvent.change(screen.getByPlaceholderText('请输入邮箱'), { target: { value: 'new@example.com' } });
+    fireEvent.change(screen.getByPlaceholderText('请输入密码（至少6位）'), { target: { value: '123456' } });
+    fireEvent.change(screen.getByPlaceholderText('请输入手机号'), { target: { value: '13800138000' } });
+    fireEvent.change(screen.getByPlaceholderText('请输入邀请码（选填）'), { target: { value: ' abcd1234 ' } });
+    fireEvent.click(screen.getAllByRole('button', { name: '注册' })[1]);
+
+    expect(await screen.findByText('邮箱验证')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('验证码'), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: '验证' }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenNthCalledWith(4, 'verify-email-otp', {
+        body: {
+          email: 'new@example.com',
+          code: '123456',
+          type: 'register',
+          password: '123456',
+          phone: '13800138000',
+          invite_code: 'ABCD1234',
+        },
+      });
+      expect(invokeMock).toHaveBeenNthCalledWith(5, 'validate-registration', {
+        body: { action: 'record_registration' },
+      });
+      expect(signInWithPasswordMock).toHaveBeenCalledWith({
+        email: 'new@example.com',
+        password: '123456',
+      });
+    });
+  });
+
+  it('does not let register invite-code state block normal login', async () => {
+    invokeMock.mockResolvedValueOnce({ data: { email: 'nick@example.com', user_id: 'u1' }, error: null });
+    signInWithPasswordMock.mockResolvedValueOnce({ error: null });
+
+    renderPage();
+    fireEvent.click(screen.getAllByRole('button', { name: '注册' })[0]);
+    fireEvent.change(screen.getByPlaceholderText('请输入邀请码（选填）'), { target: { value: '12' } });
+    fireEvent.click(screen.getAllByRole('button', { name: '登录' })[0]);
+    fireEvent.click(screen.getByLabelText('agree-login'));
+    fireEvent.change(screen.getByPlaceholderText('请输入手机号、用户名或邮箱'), { target: { value: '麻将高手' } });
+    fireEvent.change(screen.getByPlaceholderText('请输入密码'), { target: { value: '123456' } });
+    fireEvent.click(screen.getAllByRole('button', { name: '登录' })[1]);
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('lookup-email', { body: { nickname: '麻将高手' } });
+      expect(signInWithPasswordMock).toHaveBeenCalledWith({ email: 'nick@example.com', password: '123456' });
+    });
   });
 });

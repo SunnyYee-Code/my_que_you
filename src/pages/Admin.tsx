@@ -132,6 +132,24 @@ export default function AdminPage() {
     },
   });
 
+  const { data: inviteBindings = [] } = useQuery({
+    queryKey: ['admin-invite-bindings'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('user_invite_bindings' as any)
+        .select(`
+          id,
+          invite_code,
+          bound_at,
+          inviter:profiles!user_invite_bindings_inviter_id_fkey(id, nickname),
+          invitee:profiles!user_invite_bindings_invitee_id_fkey(id, nickname)
+        `)
+        .order('bound_at', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+
   const filteredUsers = profiles.filter(u =>
     (u.nickname || '').includes(searchQuery) || (u.phone || '').includes(searchQuery)
   );
@@ -146,6 +164,7 @@ export default function AdminPage() {
     activeGroups: groups.filter(g => g.status === 'OPEN' || g.status === 'FULL').length,
     completedGroups: groups.filter(g => g.status === 'COMPLETED').length,
     totalCities: allCities.length,
+    totalInviteBindings: inviteBindings.length,
   };
 
   const invalidateAll = () => {
@@ -158,6 +177,7 @@ export default function AdminPage() {
     queryClient.invalidateQueries({ queryKey: ['admin-user-roles'] });
     queryClient.invalidateQueries({ queryKey: ['admin-chat-groups'] });
     queryClient.invalidateQueries({ queryKey: ['admin-exits'] });
+    queryClient.invalidateQueries({ queryKey: ['admin-invite-bindings'] });
     queryClient.invalidateQueries({ queryKey: ['cities'] });
   };
 
@@ -193,12 +213,13 @@ export default function AdminPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {[
             { label: '注册用户', value: stats.totalUsers, icon: Users, color: 'text-primary' },
             { label: '活跃拼团', value: stats.activeGroups, icon: BarChart3, color: 'text-green-500' },
             { label: '完成拼团', value: stats.completedGroups, icon: BarChart3, color: 'text-yellow-500' },
             { label: '开通城市', value: stats.totalCities, icon: MapPin, color: 'text-blue-500' },
+            { label: '邀请绑定', value: stats.totalInviteBindings, icon: UserPlus, color: 'text-amber-500' },
           ].map(stat => (
             <Card key={stat.label}>
               <CardContent className="p-4 text-center">
@@ -219,6 +240,7 @@ export default function AdminPage() {
             <TabsTrigger value="reports" className="flex-1">举报</TabsTrigger>
             <TabsTrigger value="reviews" className="flex-1">评价</TabsTrigger>
             <TabsTrigger value="chat" className="flex-1">聊天</TabsTrigger>
+            <TabsTrigger value="invites" className="flex-1">邀请归因</TabsTrigger>
            <TabsTrigger value="appeals" className="flex-1">申诉{appeals.length > 0 && ` (${appeals.length})`}</TabsTrigger>
             <TabsTrigger value="exits" className="flex-1">退出记录</TabsTrigger>
             <TabsTrigger value="settings" className="flex-1">设置</TabsTrigger>
@@ -298,6 +320,22 @@ export default function AdminPage() {
           <TabsContent value="chat" className="mt-4 space-y-3">
             {chatGroups.length === 0 ? <EmptyCard text="暂无聊天室" /> : chatGroups.map(cg => (
               <ChatGroupCard key={cg.id} group={cg} isSuperAdmin={isSuperAdmin} onUpdate={invalidateAll} />
+            ))}
+          </TabsContent>
+
+          <TabsContent value="invites" className="mt-4 space-y-3">
+            {inviteBindings.length === 0 ? <EmptyCard text="暂无邀请码绑定记录" /> : inviteBindings.map((binding: any) => (
+              <Card key={binding.id}>
+                <CardContent className="p-3 space-y-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium">{binding.invite_code}</p>
+                    <p className="text-xs text-muted-foreground">{format(new Date(binding.bound_at), 'MM-dd HH:mm')}</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    邀请人：{binding.inviter?.nickname || '未知用户'} → 被邀请人：{binding.invitee?.nickname || '未知用户'}
+                  </p>
+                </CardContent>
+              </Card>
             ))}
           </TabsContent>
 

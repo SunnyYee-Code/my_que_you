@@ -22,6 +22,15 @@ const queryState = vi.hoisted(() => ({
   appeals: [{ id: 'ap1', user: { id: 'u2', nickname: '申诉人' }, reason: '误扣分', created_at: '2026-03-25T00:00:00Z', change: -3 }],
   exits: [{ id: 'ex1', user: { id: 'u3', nickname: '退出人' }, group: { id: 'g1', address: '天府广场店' }, exit_type: 'left', reason: '有事', credit_change: -3, created_at: '2026-03-25T00:00:00Z' }],
   chatGroups: [{ id: 'g1', address: '天府广场店', status: 'OPEN', host: { nickname: '牌友A' } }],
+  inviteBindings: [
+    {
+      id: 'ib1',
+      invite_code: 'HOST001',
+      bound_at: '2026-03-31T09:30:00.000Z',
+      inviter: { id: 'u1', nickname: '牌友A' },
+      invitee: { id: 'u2', nickname: '新牌友' },
+    },
+  ],
   systemSettings: [{ key: 'leave_credit_deduction', value: '3' }, { key: 'kick_credit_deduction', value: '5' }],
   bannedWords: [{ id: 'bw1', word: '旧词' }],
 }));
@@ -94,6 +103,7 @@ vi.mock('@tanstack/react-query', async () => {
         'admin-appeals': queryState.appeals,
         'admin-exits': queryState.exits,
         'admin-chat-groups': queryState.chatGroups,
+        'admin-invite-bindings': queryState.inviteBindings,
         'admin-system-settings': queryState.systemSettings,
         'admin-banned-words': queryState.bannedWords,
       };
@@ -144,6 +154,17 @@ describe('AdminPage', () => {
     expect(screen.getByText('申诉人')).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: '退出记录' }));
     expect(screen.getByText('退出人')).toBeInTheDocument();
+  });
+
+  it('renders invite attribution data in admin tab', async () => {
+    renderPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: '邀请归因' }));
+
+    expect(screen.getByText('HOST001')).toBeInTheDocument();
+    expect(screen.getByText(/邀请人：牌友A/)).toBeInTheDocument();
+    expect(screen.getByText(/新牌友/)).toBeInTheDocument();
+    expect(screen.getByText('03-31 17:30')).toBeInTheDocument();
   });
 
   it('adds banned word and invalidates client cache', async () => {

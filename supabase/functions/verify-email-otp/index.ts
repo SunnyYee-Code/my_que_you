@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
+import { assertInviteCode, bindInviteCodeForUser } from "../_shared/invite-code.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,7 +17,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    const { email, code, type, password, phone } = await req.json();
+    const { email, code, type, password, phone, invite_code } = await req.json();
     if (!email || !code || !type) throw new Error("email, code, and type are required");
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -49,21 +50,40 @@ Deno.serve(async (req) => {
 
     const otpId = otpRows[0].id;
 
-    // Mark OTP as used
-    await adminClient
-      .from("email_otp_codes")
-      .update({ used_at: now })
-      .eq("id", otpId);
-
     // --- Registration flow ---
     if (type === "register") {
       if (!password) throw new Error("password is required for registration");
+
+      const normalizedInviteCode = invite_code ? assertInviteCode(String(invite_code)) : null;
 
       // Check if user already exists in auth
       const { data: { users: existingUsers } } = await adminClient.auth.admin.listUsers();
       const existingUser = existingUsers?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
 
+      if (normalizedInviteCode) {
+        const { data: inviterProfile } = await adminClient
+          .from("profiles")
+          .select("id, uid")
+          .eq("uid", normalizedInviteCode)
+          .maybeSingle();
+
+        if (!inviterProfile) {
+          throw new Error("邀请码不存在");
+        }
+
+        if (existingUser?.id && inviterProfile.id === existingUser.id) {
+          throw new Error("不能绑定自己的邀请码");
+        }
+      }
+
+      // Only consume OTP after registration prechecks succeed.
+      await adminClient
+        .from("email_otp_codes")
+        .update({ used_at: now })
+        .eq("id", otpId);
+
       let userId: string;
+      let inviteBindingError: string | null = null;
 
       if (existingUser) {
         // User exists but unconfirmed - confirm and update password
@@ -92,7 +112,15 @@ Deno.serve(async (req) => {
           .eq("id", userId);
       }
 
-      return new Response(JSON.stringify({ success: true, user_id: userId }), {
+      if (normalizedInviteCode) {
+        try {
+          await bindInviteCodeForUser(adminClient, userId, normalizedInviteCode, "register");
+        } catch (error: any) {
+          inviteBindingError = error?.message ?? "邀请码绑定失败";
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true, user_id: userId, invite_binding_error: inviteBindingError }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

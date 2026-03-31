@@ -19,6 +19,8 @@ import { ACCOUNT_DELETION_STATUS, DEFAULT_ACCOUNT_DELETION_SNAPSHOT } from '@/co
 import { useToast } from '@/hooks/use-toast';
 import { buildRealNameViewModel, getRealNameStatusActions, REAL_NAME_COPY } from '@/constants/realName';
 import { supabase } from '@/integrations/supabase/client';
+import { useBindInviteCode, useInviteCodeSnapshot } from '@/hooks/useInviteCode';
+import { createDefaultInviteCodeSnapshot, validateInviteCode } from '@/lib/invite-code';
 import { ArrowLeft, AlertTriangle, Shield, Camera, User, Phone, Calendar, Lock } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -32,6 +34,8 @@ export default function SettingsPage() {
   const cancelAccountDeletion = useCancelAccountDeletion();
   const { data: blacklistEntries = [] } = useBlacklist();
   const removeFromBlacklist = useRemoveFromBlacklist();
+  const { data: inviteCodeSnapshot = createDefaultInviteCodeSnapshot(), isLoading: inviteCodeLoading } = useInviteCodeSnapshot();
+  const bindInviteCode = useBindInviteCode();
   const updateProfile = useUpdateProfile();
   const { data: realNameSnapshot, isLoading: realNameLoading } = useRealNameVerification();
   const submitRealNameVerification = useSubmitRealNameVerification();
@@ -46,9 +50,10 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
+  const [inviteCodeInput, setInviteCodeInput] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  if (authLoading || isLoading || deletionStatusLoading || realNameLoading) return <AppLayout><LoadingState /></AppLayout>;
+  if (authLoading || isLoading || deletionStatusLoading || realNameLoading || inviteCodeLoading) return <AppLayout><LoadingState /></AppLayout>;
 
   if (!user || !profile) {
     navigate('/login');
@@ -309,6 +314,29 @@ export default function SettingsPage() {
     navigate('/login');
   };
 
+  const handleBindInviteCode = async () => {
+    const validation = validateInviteCode(inviteCodeInput);
+    if (!validation.ok) {
+      toast({ title: validation.message, variant: 'destructive' });
+      return;
+    }
+
+    try {
+      await bindInviteCode.mutateAsync({ inviteCode: validation.normalized });
+      setInviteCodeInput('');
+      toast({
+        title: '邀请码绑定成功',
+        description: '邀请关系已记录，可用于后续增长归因。',
+      });
+    } catch (error: any) {
+      toast({
+        title: '邀请码绑定失败',
+        description: error?.message || '请稍后重试',
+        variant: 'destructive',
+      });
+    }
+  };
+
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -395,6 +423,66 @@ export default function SettingsPage() {
                 <Calendar className="h-3.5 w-3.5" /> 注册时间
               </div>
               <span className="text-sm">{format(new Date(profile.created_at), 'yyyy-MM-dd')}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Shield className="h-4 w-4 text-primary" /> 邀请码
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm text-muted-foreground">我的邀请码</span>
+                <span className="text-lg font-semibold tracking-[0.2em]">{inviteCodeSnapshot.inviteCode || profile.uid || '暂无'}</span>
+              </div>
+              <p className="text-sm text-muted-foreground">已邀请 {inviteCodeSnapshot.invitedCount} 人</p>
+              {inviteCodeSnapshot.invitedBy ? (
+                <p className="text-sm text-muted-foreground">
+                  已绑定邀请人：{inviteCodeSnapshot.invitedBy.inviterNickname || inviteCodeSnapshot.invitedBy.inviteCode}
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">若你是被好友邀请注册，可在此绑定一次邀请码。</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">绑定上级邀请码</label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="输入邀请你的邀请码"
+                  value={inviteCodeInput}
+                  onChange={(e) => setInviteCodeInput(e.target.value)}
+                  disabled={!inviteCodeSnapshot.canBind}
+                />
+                <Button
+                  type="button"
+                  onClick={handleBindInviteCode}
+                  disabled={!inviteCodeSnapshot.canBind || bindInviteCode.isPending}
+                >
+                  {bindInviteCode.isPending ? '绑定中...' : '绑定邀请码'}
+                </Button>
+              </div>
+              {!inviteCodeSnapshot.canBind && (
+                <p className="text-xs text-muted-foreground">当前账号已完成邀请码绑定，不能重复修改。</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium">最近邀请记录</p>
+              {inviteCodeSnapshot.recentInvites.length === 0 ? (
+                <p className="text-sm text-muted-foreground">暂无邀请记录</p>
+              ) : (
+                inviteCodeSnapshot.recentInvites.map((entry) => (
+                  <div key={entry.inviteeId} className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
+                    <span className="text-sm font-medium">{entry.inviteeNickname || '新用户'}</span>
+                    <span className="text-xs text-muted-foreground">{format(new Date(entry.boundAt), 'MM-dd HH:mm')}</span>
+                  </div>
+                ))
+              )}
             </div>
           </CardContent>
         </Card>
