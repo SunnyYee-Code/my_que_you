@@ -14,6 +14,7 @@ import { Settings, Edit, Star, Flag, TrendingUp, TrendingDown, History, ShieldCh
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { useAddToBlacklist, useBlacklistStatus, useRemoveFromBlacklist } from '@/hooks/useBlacklist';
 
 export default function ProfilePage() {
   const { id } = useParams<{ id: string }>();
@@ -25,6 +26,9 @@ export default function ProfilePage() {
   const { data: reviews = [] } = useReviewsByTarget(id);
   const { data: groups = [] } = useGroupsByMember(id);
   const { data: creditHistory = [] } = useCreditHistory(isSelf ? id : undefined);
+  const { data: blacklistState } = useBlacklistStatus(id);
+  const addToBlacklist = useAddToBlacklist();
+  const removeFromBlacklist = useRemoveFromBlacklist();
 
   if (profileLoading) return <AppLayout><LoadingState /></AppLayout>;
   if (!profile) return <AppLayout><div className="text-center py-20">用户不存在</div></AppLayout>;
@@ -32,6 +36,40 @@ export default function ProfilePage() {
   const avgPunctuality = reviews.length ? (reviews.reduce((s, r) => s + r.punctuality, 0) / reviews.length).toFixed(1) : '-';
   const avgAttitude = reviews.length ? (reviews.reduce((s, r) => s + r.attitude, 0) / reviews.length).toFixed(1) : '-';
   const avgSkill = reviews.length ? (reviews.reduce((s, r) => s + r.skill, 0) / reviews.length).toFixed(1) : '-';
+
+  const handleAddToBlacklist = async () => {
+    if (!id) return;
+    try {
+      await addToBlacklist.mutateAsync({ blockedUserId: id });
+      toast({
+        title: '已加入黑名单',
+        description: '你们之间的私聊和好友互动已被屏蔽。',
+      });
+    } catch (error: any) {
+      toast({
+        title: '拉黑失败',
+        description: error?.message || '请稍后重试',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleRemoveFromBlacklist = async () => {
+    if (!(blacklistState as any)?.entryId) return;
+    try {
+      await removeFromBlacklist.mutateAsync((blacklistState as any).entryId);
+      toast({
+        title: '已移除黑名单',
+        description: '该用户已恢复正常互动权限。',
+      });
+    } catch (error: any) {
+      toast({
+        title: '移除失败',
+        description: error?.message || '请稍后重试',
+        variant: 'destructive',
+      });
+    }
+  };
 
   return (
     <AppLayout>
@@ -75,15 +113,45 @@ export default function ProfilePage() {
                     )}
                   </div>
                 ) : (
-                  <div className="pt-1">
-                    <ReportDialog
-                      reportedId={id!}
-                      trigger={
-                        <Button size="sm" variant="outline" className="gap-1 text-muted-foreground hover:text-destructive">
-                          <Flag className="h-3.5 w-3.5" /> 举报用户
+                  <div className="pt-1 space-y-2">
+                    <div className="flex gap-2 flex-wrap">
+                      {blacklistState?.relationship === 'blocked_by_me' ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1 text-destructive"
+                          onClick={handleRemoveFromBlacklist}
+                          disabled={removeFromBlacklist.isPending}
+                        >
+                          取消拉黑
                         </Button>
-                      }
-                    />
+                      ) : blacklistState?.relationship === 'blocked_by_them' ? (
+                        <Button size="sm" variant="outline" className="gap-1" disabled>
+                          对方已屏蔽你
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1 text-destructive"
+                          onClick={handleAddToBlacklist}
+                          disabled={addToBlacklist.isPending}
+                        >
+                          拉黑用户
+                        </Button>
+                      )}
+                      <ReportDialog
+                        reportedId={id!}
+                        trigger={
+                          <Button size="sm" variant="outline" className="gap-1 text-muted-foreground hover:text-destructive">
+                            <Flag className="h-3.5 w-3.5" /> 举报用户
+                          </Button>
+                        }
+                      />
+                    </div>
+                    {blacklistState?.isBlocked && blacklistState.reason && (
+                      <p className="text-xs text-muted-foreground">{blacklistState.reason}</p>
+                    )}
                   </div>
                 )}
               </div>

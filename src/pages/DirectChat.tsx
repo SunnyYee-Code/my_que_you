@@ -15,6 +15,7 @@ import { validateNoBannedWords } from '@/lib/banned-words';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useBlacklistStatus } from '@/hooks/useBlacklist';
 
 // ── Invite Card ─────────────────────────────────────────────────────────────
 
@@ -206,10 +207,12 @@ export default function DirectChatPage() {
   const { toast } = useToast();
   const { data: friendProfile, isLoading: profileLoading } = useProfileById(friendId);
   const { data: messages = [], isLoading: msgLoading } = useDirectMessages(friendId);
+  const { data: blacklistState } = useBlacklistStatus(friendId);
   const sendMessage = useSendDirectMessage();
   const markRead = useMarkDMsRead();
   const [input, setInput] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
+  const interactionBlocked = blacklistState?.isBlocked ?? false;
 
   // Mark messages as read when chat opens or new messages arrive
   useEffect(() => {
@@ -227,7 +230,7 @@ export default function DirectChatPage() {
   if (!friendProfile) return <div className="p-4">用户不存在</div>;
 
   const send = async () => {
-    if (!input.trim() || !friendId) return;
+    if (!input.trim() || !friendId || interactionBlocked) return;
     const bannedError = await validateNoBannedWords(input);
     if (bannedError) {
       toast({ title: bannedError, variant: 'destructive' });
@@ -256,6 +259,11 @@ export default function DirectChatPage() {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+        {interactionBlocked && (
+          <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            {blacklistState?.reason}
+          </div>
+        )}
         {(messages as any[]).map((msg) => {
           const isSelf = msg.sender_id === user?.id;
           const isInviteCard = msg.type === 'group_invite';
@@ -295,8 +303,9 @@ export default function DirectChatPage() {
             placeholder="输入消息..."
             onKeyDown={e => e.key === 'Enter' && send()}
             className="flex-1"
+            disabled={interactionBlocked}
           />
-          <Button size="icon" onClick={send} disabled={!input.trim() || sendMessage.isPending}>
+          <Button size="icon" onClick={send} disabled={!input.trim() || sendMessage.isPending || interactionBlocked}>
             <Send className="h-4 w-4" />
           </Button>
         </div>

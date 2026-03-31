@@ -14,6 +14,8 @@ const useCancelAccountDeletionMock = vi.fn();
 const useRealNameVerificationMock = vi.fn();
 const useSubmitRealNameVerificationMock = vi.fn();
 const useCancelRealNameVerificationMock = vi.fn();
+const useBlacklistMock = vi.fn();
+const useRemoveFromBlacklistMock = vi.fn();
 const fromMock = vi.fn();
 const updateDbMock = vi.fn();
 const eqMock = vi.fn();
@@ -25,6 +27,7 @@ const applyDeletionMutateAsyncMock = vi.fn();
 const cancelDeletionMutateAsyncMock = vi.fn();
 const submitRealNameMutateAsyncMock = vi.fn();
 const cancelRealNameMutateAsyncMock = vi.fn();
+const removeFromBlacklistMutateAsyncMock = vi.fn();
 
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
@@ -45,6 +48,10 @@ vi.mock('@/hooks/useAccountDeletion', () => ({
   useAccountDeletionStatus: () => useAccountDeletionStatusMock(),
   useApplyAccountDeletion: () => useApplyAccountDeletionMock(),
   useCancelAccountDeletion: () => useCancelAccountDeletionMock(),
+}));
+vi.mock('@/hooks/useBlacklist', () => ({
+  useBlacklist: () => useBlacklistMock(),
+  useRemoveFromBlacklist: () => useRemoveFromBlacklistMock(),
 }));
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
@@ -86,6 +93,7 @@ describe('SettingsPage', () => {
     cancelDeletionMutateAsyncMock.mockResolvedValue({});
     submitRealNameMutateAsyncMock.mockResolvedValue({});
     cancelRealNameMutateAsyncMock.mockResolvedValue({});
+    removeFromBlacklistMutateAsyncMock.mockResolvedValue(undefined);
     useAuthMock.mockReturnValue({
       user: { id: 'u1', email: 'user@example.com' },
       profile: { nickname: '老雀友', phone: '13800138000', credit_score: 95, created_at: new Date().toISOString() },
@@ -129,6 +137,23 @@ describe('SettingsPage', () => {
     });
     useSubmitRealNameVerificationMock.mockReturnValue({ isPending: false, mutateAsync: submitRealNameMutateAsyncMock });
     useCancelRealNameVerificationMock.mockReturnValue({ isPending: false, mutateAsync: cancelRealNameMutateAsyncMock });
+    useBlacklistMock.mockReturnValue({
+      data: [
+        {
+          id: 'blacklist-1',
+          blocker_id: 'u1',
+          blocked_id: 'u2',
+          created_at: '2026-03-30T08:00:00.000Z',
+          blocked_profile: {
+            id: 'u2',
+            nickname: '麻烦用户',
+            uid: 'UID0002',
+          },
+        },
+      ],
+      isLoading: false,
+    });
+    useRemoveFromBlacklistMock.mockReturnValue({ isPending: false, mutateAsync: removeFromBlacklistMutateAsyncMock });
     updateProfileHookMock.mockReturnValue({ isPending: false, mutateAsync: vi.fn() });
     eqMock.mockResolvedValue({ error: null });
     updateDbMock.mockReturnValue({ eq: eqMock });
@@ -388,5 +413,22 @@ describe('SettingsPage', () => {
     renderPage();
     expect(screen.getByText('已撤销')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '提交认证' })).toBeInTheDocument();
+  });
+
+  it('renders blacklist management and supports removing blocked users', async () => {
+    renderPage();
+
+    expect(screen.getByText('黑名单管理')).toBeInTheDocument();
+    expect(screen.getByText('麻烦用户')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '移除黑名单' }));
+
+    await waitFor(() => {
+      expect(removeFromBlacklistMutateAsyncMock).toHaveBeenCalledWith('blacklist-1');
+      expect(toastMock).toHaveBeenCalledWith({
+        title: '已移除黑名单',
+        description: '该用户已恢复正常互动权限。',
+      });
+    });
   });
 });

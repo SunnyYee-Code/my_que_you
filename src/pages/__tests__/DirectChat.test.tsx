@@ -11,6 +11,14 @@ const validateNoBannedWordsMock = vi.hoisted(() => vi.fn());
 const sendMessageMock = vi.fn();
 const directState = vi.hoisted(() => ({ data: [] as any[], isLoading: false }));
 const profileState = vi.hoisted(() => ({ data: { id: 'friend-1', nickname: '好友' }, isLoading: false }));
+const blacklistStatusState = vi.hoisted(() => ({
+  data: {
+    isBlocked: false,
+    relationship: 'none',
+    blockedByUserId: null,
+    reason: '',
+  },
+}));
 const supabaseMock = vi.hoisted(() => ({
   from: vi.fn(() => ({
     select: vi.fn(() => ({
@@ -37,6 +45,9 @@ vi.mock('@/hooks/useDirectMessages', () => ({
   useDirectMessages: () => directState,
   useSendDirectMessage: () => ({ mutateAsync: sendMessageMock }),
   useMarkDMsRead: () => ({ mutate: vi.fn() }),
+}));
+vi.mock('@/hooks/useBlacklist', () => ({
+  useBlacklistStatus: () => blacklistStatusState,
 }));
 vi.mock('@/lib/banned-words', () => ({ validateNoBannedWords: validateNoBannedWordsMock }));
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: toastMock }) }));
@@ -69,6 +80,12 @@ describe('DirectChatPage', () => {
     directState.isLoading = false;
     profileState.data = { id: 'friend-1', nickname: '好友' };
     profileState.isLoading = false;
+    blacklistStatusState.data = {
+      isBlocked: false,
+      relationship: 'none',
+      blockedByUserId: null,
+      reason: '',
+    };
   });
 
   it('sends direct message successfully', async () => {
@@ -87,6 +104,20 @@ describe('DirectChatPage', () => {
     await user.click(screen.getAllByRole('button').at(-1)!);
     expect(sendMessageMock).not.toHaveBeenCalled();
     expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '包含违禁词', variant: 'destructive' }));
+  });
+
+  it('shows blacklist guard and blocks sending when interaction is blocked', async () => {
+    blacklistStatusState.data = {
+      isBlocked: true,
+      relationship: 'blocked_by_me',
+      blockedByUserId: 'user-1',
+      reason: '你已将对方加入黑名单，当前无法继续互动',
+    };
+
+    renderPage();
+
+    expect(screen.getByText('你已将对方加入黑名单，当前无法继续互动')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('输入消息...')).toBeDisabled();
   });
 
   it('renders host invite card and enter button for approved invitation', async () => {

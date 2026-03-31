@@ -18,16 +18,24 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
 import { useFriendshipStatus } from '@/hooks/useFriends';
+import { useBlacklistStatus } from '@/hooks/useBlacklist';
 import { UserCheck, Clock as ClockIcon } from 'lucide-react';
 
 function SearchResultCard({ searchResult, user, showAddDialog, setShowAddDialog, addMessage, setAddMessage, handleSendRequest, sendRequest, navigate }: any) {
   const { data: friendship, isLoading: statusLoading } = useFriendshipStatus(searchResult?.id);
+  const { data: blacklistStatus, isLoading: blacklistLoading } = useBlacklistStatus(searchResult?.id);
 
   const renderAction = () => {
     if (searchResult.id === user?.id) {
       return <span className="text-xs text-muted-foreground">这是你自己</span>;
     }
-    if (statusLoading) return null;
+    if (statusLoading || blacklistLoading) return null;
+    if (blacklistStatus?.relationship === 'blocked_by_me') {
+      return <span className="text-xs text-muted-foreground">已拉黑</span>;
+    }
+    if (blacklistStatus?.relationship === 'blocked_by_them') {
+      return <span className="text-xs text-muted-foreground">对方已屏蔽你</span>;
+    }
     if (friendship?.status === 'accepted') {
       return (
         <Button variant="ghost" size="sm" disabled className="gap-1 text-muted-foreground">

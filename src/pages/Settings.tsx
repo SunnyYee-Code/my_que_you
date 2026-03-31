@@ -14,6 +14,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useUpdateProfile, useCreditHistory } from '@/hooks/useProfile';
 import { useCancelRealNameVerification, useRealNameVerification, useSubmitRealNameVerification } from '@/hooks/useRealNameVerification';
 import { useAccountDeletionStatus, useApplyAccountDeletion, useCancelAccountDeletion } from '@/hooks/useAccountDeletion';
+import { useBlacklist, useRemoveFromBlacklist } from '@/hooks/useBlacklist';
 import { ACCOUNT_DELETION_STATUS, DEFAULT_ACCOUNT_DELETION_SNAPSHOT } from '@/constants/accountDeletion';
 import { useToast } from '@/hooks/use-toast';
 import { buildRealNameViewModel, getRealNameStatusActions, REAL_NAME_COPY } from '@/constants/realName';
@@ -29,6 +30,8 @@ export default function SettingsPage() {
   const { data: accountDeletionStatus = DEFAULT_ACCOUNT_DELETION_SNAPSHOT, isLoading: deletionStatusLoading } = useAccountDeletionStatus();
   const applyAccountDeletion = useApplyAccountDeletion();
   const cancelAccountDeletion = useCancelAccountDeletion();
+  const { data: blacklistEntries = [] } = useBlacklist();
+  const removeFromBlacklist = useRemoveFromBlacklist();
   const updateProfile = useUpdateProfile();
   const { data: realNameSnapshot, isLoading: realNameLoading } = useRealNameVerification();
   const submitRealNameVerification = useSubmitRealNameVerification();
@@ -247,6 +250,22 @@ export default function SettingsPage() {
     } else {
       toast({ title: '申诉已提交', description: '我们会在48小时内审核' });
       setAppealReason('');
+    }
+  };
+
+  const handleRemoveFromBlacklist = async (entryId: string) => {
+    try {
+      await removeFromBlacklist.mutateAsync(entryId);
+      toast({
+        title: '已移除黑名单',
+        description: '该用户已恢复正常互动权限。',
+      });
+    } catch (err: any) {
+      toast({
+        title: '移除失败',
+        description: err?.message || '请稍后重试',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -487,6 +506,36 @@ export default function SettingsPage() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Shield className="h-4 w-4 text-primary" /> 黑名单管理
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {blacklistEntries.length === 0 ? (
+              <p className="text-sm text-muted-foreground">当前黑名单为空</p>
+            ) : (
+              blacklistEntries.map((entry: any) => (
+                <div key={entry.id} className="flex items-center justify-between gap-3 rounded-lg border border-border/60 px-3 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{entry.blocked_profile?.nickname || '未知用户'}</p>
+                    <p className="text-xs text-muted-foreground">UID：{entry.blocked_profile?.uid || '暂无'}</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleRemoveFromBlacklist(entry.id)}
+                    disabled={removeFromBlacklist.isPending}
+                  >
+                    移除黑名单
+                  </Button>
                 </div>
               ))
             )}

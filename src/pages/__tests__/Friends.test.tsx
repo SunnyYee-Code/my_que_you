@@ -16,6 +16,7 @@ let requestsData: any[] = [];
 let dmCounts: any = { byFriend: {}, total: 0 };
 let searchResult: any = null;
 let friendshipStatus: any = null;
+let blacklistStatus: any = { isBlocked: false, relationship: 'none', blockedByUserId: null, reason: '' };
 let currentUser: any = { id: 'user-1' };
 
 vi.mock('react-router-dom', async () => {
@@ -42,6 +43,9 @@ vi.mock('@/hooks/useFriends', () => ({
   useSendFriendRequest: () => ({ mutateAsync: mockSendRequest, isPending: false }),
   useFriendshipStatus: () => ({ data: friendshipStatus, isLoading: false }),
 }));
+vi.mock('@/hooks/useBlacklist', () => ({
+  useBlacklistStatus: () => ({ data: blacklistStatus, isLoading: false }),
+}));
 
 function renderPage() {
   return render(
@@ -62,6 +66,7 @@ describe('FriendsPage', () => {
     dmCounts = { byFriend: { 'friend-1': 3 }, total: 3 };
     searchResult = { id: 'user-3', uid: 'UID003', nickname: '目标用户', credit_score: 88 };
     friendshipStatus = null;
+    blacklistStatus = { isBlocked: false, relationship: 'none', blockedByUserId: null, reason: '' };
     currentUser = { id: 'user-1' };
     mockSearch.mockResolvedValue(searchResult);
     mockRespond.mockResolvedValue(undefined);
@@ -106,5 +111,26 @@ describe('FriendsPage', () => {
     expect(mockSearch).toHaveBeenCalledWith('UID003');
     expect(mockSendRequest).toHaveBeenCalledWith({ friendId: 'user-3', message: '你好' });
     expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({ title: '好友请求已发送' }));
+  });
+
+  it('shows blocked status and prevents sending friend request to blacklisted user', async () => {
+    blacklistStatus = {
+      isBlocked: true,
+      relationship: 'blocked_by_me',
+      blockedByUserId: 'user-1',
+      reason: '你已将对方加入黑名单，当前无法继续互动',
+    };
+
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole('tab', { name: /添加好友/ }));
+    await user.type(screen.getByPlaceholderText('输入对方UID搜索'), 'UID003');
+    await user.click(screen.getByRole('button', { name: /搜索/ }));
+
+    await waitFor(() => expect(screen.getAllByText('目标用户').length).toBeGreaterThan(0));
+    expect(screen.getByText('已拉黑')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /加好友/ })).not.toBeInTheDocument();
+    expect(mockSendRequest).not.toHaveBeenCalled();
   });
 });
