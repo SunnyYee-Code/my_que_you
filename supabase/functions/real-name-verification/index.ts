@@ -319,9 +319,22 @@ async function createNotification(admin: ReturnType<typeof createClient>, userId
     content,
     deliveredAt: now,
   }));
-  if (!error) return;
-
   const isReviewResult = type === "real_name_approved" || type === "real_name_rejected";
+  if (!error) {
+    const { error: logError } = await admin.from("notification_delivery_logs").insert(buildNotificationDeliveryLogInsert({
+      userId,
+      eventKey: isReviewResult ? "review_result" : "review_submission",
+      audienceRole: "applicant",
+      channel: "in_app",
+      status: "sent",
+      notificationType: type,
+    }));
+    if (logError) {
+      console.error(`Failed to log notification delivery success for ${userId}:`, logError.message);
+    }
+    return;
+  }
+
   await admin.from("notification_delivery_logs").insert(buildNotificationDeliveryLogInsert({
     userId,
     eventKey: isReviewResult ? "review_result" : "review_submission",

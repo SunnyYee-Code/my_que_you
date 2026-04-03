@@ -119,6 +119,17 @@ Deno.serve(async (req) => {
       }));
       throw notificationError;
     }
+    const { error: logError } = await admin.from("notification_delivery_logs").insert(buildNotificationDeliveryLogInsert({
+      userId: request.user_id,
+      eventKey: "review_result",
+      audienceRole: "applicant",
+      channel: "in_app",
+      status: "sent",
+      notificationType: action === "approve" ? "real_name_approved" : "real_name_rejected",
+    }));
+    if (logError) {
+      console.error(`Failed to log review_result delivery success for ${request.user_id}:`, logError.message);
+    }
 
     return new Response(JSON.stringify(buildSnapshot({
       status: nextStatus,

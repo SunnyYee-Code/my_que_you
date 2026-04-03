@@ -60,6 +60,15 @@ interface BuildNotificationOpenPatchInput {
   now?: string;
 }
 
+interface BuildNotificationDeliveryLogInput {
+  plan: NotificationReachPlan;
+  channel?: NotificationReachChannel;
+  status: 'sent' | 'failed';
+  notificationType?: string | null;
+  errorMessage?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
 type NotificationDeliveryFields = {
   reach_channel: NotificationReachChannel;
   delivery_status: NotificationDeliveryStatus;
@@ -73,6 +82,16 @@ type NotificationOpenPatch = {
   read: true;
   read_at: string;
   clicked_at?: string;
+};
+
+type NotificationDeliveryLogFields = {
+  event_key: NotificationEventKey;
+  audience_role: NotificationAudienceRole;
+  channel: NotificationReachChannel;
+  status: 'sent' | 'failed';
+  notification_type: string | null;
+  error_message: string | null;
+  metadata: Record<string, unknown>;
 };
 
 const PLAN_PRESETS: Record<NotificationEventKey, Omit<NotificationReachPlan, 'eventKey' | 'audienceRole'>> = {
@@ -185,5 +204,19 @@ export function buildNotificationOpenPatch(
     read: true,
     read_at: input.readAt ?? now,
     ...(input.hasNavigationTarget ? { clicked_at: input.clickedAt ?? now } : {}),
+  };
+}
+
+export function buildNotificationDeliveryLogFields(
+  input: BuildNotificationDeliveryLogInput,
+): NotificationDeliveryLogFields {
+  return {
+    event_key: input.plan.eventKey,
+    audience_role: input.plan.audienceRole,
+    channel: input.channel ?? input.plan.primaryChannel,
+    status: input.status,
+    notification_type: input.notificationType ?? null,
+    error_message: input.errorMessage ?? null,
+    metadata: input.metadata ?? {},
   };
 }

@@ -133,6 +133,23 @@ function createReminderDeliveryStore(admin: ReturnType<typeof createClient>): Re
         .single();
 
       if (error) throw error;
+      const { error: logError } = await admin
+        .from("notification_delivery_logs")
+        .insert(buildNotificationDeliveryLogInsert({
+          userId: input.userId,
+          eventKey: "group_start_reminder",
+          audienceRole: input.role,
+          channel: "in_app",
+          status: "sent",
+          notificationType: "group_start_reminder",
+          sourceNotificationId: data.id as string,
+          metadata: {
+            group_id: input.groupId,
+          },
+        }));
+      if (logError) {
+        console.error(`Failed to log reminder delivery success for ${input.userId}:`, logError.message);
+      }
       return { id: data.id as string };
     },
     async markSent(input) {

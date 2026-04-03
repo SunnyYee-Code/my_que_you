@@ -33,6 +33,7 @@ import {
 } from '@/lib/group-share-poster';
 import {
   buildNotificationDeliveryFields,
+  buildNotificationDeliveryLogFields,
   buildNotificationReachPlan,
 } from '@/lib/notification-reach';
 import {
@@ -326,6 +327,19 @@ export default function GroupDetailPage() {
           title: '补位通知发送失败',
           description: '退出已生效，但房主通知未发送成功，请稍后重试提醒。',
         });
+      } else {
+        await supabase.from('notification_delivery_logs').insert({
+          user_id: group.host_id,
+          ...buildNotificationDeliveryLogFields({
+            plan: hostNotificationPlan,
+            status: 'sent',
+            notificationType: 'group_cancelled',
+            metadata: {
+              group_id: group.id,
+              emergency_fill: nextEmergencyFillMeta.isEmergencyFill,
+            },
+          }),
+        } as any);
       }
       if (nextEmergencyFillMeta.isEmergencyFill) {
         toast({
@@ -426,6 +440,19 @@ export default function GroupDetailPage() {
           title: '补位通知发送失败',
           description: '成员已移除，但通知未发送成功，请稍后重试提醒。',
         });
+      } else {
+        await supabase.from('notification_delivery_logs').insert({
+          user_id: kickTargetId,
+          ...buildNotificationDeliveryLogFields({
+            plan: kickedMemberNotificationPlan,
+            status: 'sent',
+            notificationType: 'group_cancelled',
+            metadata: {
+              group_id: group.id,
+              kicked_by: user!.id,
+            },
+          }),
+        } as any);
       }
 
       toast({ title: '已移除成员' });

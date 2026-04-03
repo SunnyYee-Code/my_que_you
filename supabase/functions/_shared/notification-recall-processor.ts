@@ -11,6 +11,12 @@ export interface NotificationRecallStore {
   getLatestRecall(notificationId: string): Promise<{ id: string; created_at: string } | null>;
   getCurrentNotificationState(notificationId: string): Promise<Pick<RecallableNotificationRecord, "read" | "read_at" | "clicked_at"> | null>;
   insertRecall(payload: ReturnType<typeof buildRecallNotificationInsert>): Promise<{ id: string | null; duplicate: boolean }>;
+  deliverRecall(input: {
+    recallId: string;
+    notification: RecallableNotificationRecord;
+    channel: string;
+    now: string;
+  }): Promise<{ status: "sent" | "failed"; deliveredAt?: string; errorMessage?: string }>;
   incrementRecallCount(notificationId: string, nextRecallCount: number): Promise<void>;
   logRecallFailure(input: {
     notification: RecallableNotificationRecord;
@@ -52,6 +58,7 @@ export async function processNotificationRecalls(input: {
       notification,
       channel: nextChannel,
       now: now.toISOString(),
+      deliveryStatus: "pending",
     });
 
     let insertedRecall: { id: string | null; duplicate: boolean };
@@ -68,7 +75,25 @@ export async function processNotificationRecalls(input: {
     }
 
     if (insertedRecall.id) {
-      recallsCreated.push(insertedRecall.id);
+      try {
+        const deliveryResult = await input.store.deliverRecall({
+          recallId: insertedRecall.id,
+          notification,
+          channel: nextChannel,
+          now: now.toISOString(),
+        });
+
+        if (deliveryResult.status === "sent") {
+          recallsCreated.push(insertedRecall.id);
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "unknown_recall_delivery_error";
+        await input.store.logRecallFailure({
+          notification,
+          channel: nextChannel,
+          errorMessage,
+        });
+      }
     }
 
     if (insertedRecall.id || insertedRecall.duplicate) {

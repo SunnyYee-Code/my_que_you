@@ -31,6 +31,15 @@ Object.defineProperty(globalThis, 'localStorage', {
   configurable: true,
 });
 
+Object.defineProperty(globalThis, 'sessionStorage', {
+  value: storage,
+  configurable: true,
+});
+Object.defineProperty(window, 'sessionStorage', {
+  value: storage,
+  configurable: true,
+});
+
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
   value: (query: string) => ({
@@ -49,6 +58,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   window.localStorage.clear();
+  window.sessionStorage.clear();
 });
 
 Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', {

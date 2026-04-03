@@ -79,8 +79,10 @@ export function buildRecallNotificationInsert(input: {
   notification: RecallableNotificationRecord;
   channel: NotificationFallbackChannel;
   now: string;
+  deliveryStatus?: "pending" | "sent" | "failed";
 }) {
   const metadata = parseNotificationReachMetadata(input.notification.metadata);
+  const deliveryStatus = input.deliveryStatus ?? "sent";
 
   return {
     user_id: input.notification.user_id,
@@ -89,8 +91,8 @@ export function buildRecallNotificationInsert(input: {
     content: input.notification.content,
     link_to: input.notification.link_to,
     reach_channel: input.channel,
-    delivery_status: "sent" as const,
-    delivered_at: input.now,
+    delivery_status: deliveryStatus,
+    delivered_at: deliveryStatus === "sent" ? input.now : null,
     recall_count: 0,
     recall_of_notification_id: input.notification.id,
     metadata: {

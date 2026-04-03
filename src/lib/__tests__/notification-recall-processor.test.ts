@@ -36,6 +36,7 @@ function buildStore(overrides: Partial<NotificationRecallStore> = {}): Notificat
     getLatestRecall: vi.fn(async () => null),
     getCurrentNotificationState: vi.fn(async () => ({ read: false, read_at: null, clicked_at: null })),
     insertRecall: vi.fn(async () => ({ id: 'recall-1', duplicate: false })),
+    deliverRecall: vi.fn(async () => ({ status: 'sent', deliveredAt: '2026-04-03T10:06:00.000Z' })),
     incrementRecallCount: vi.fn(async () => undefined),
     logRecallFailure: vi.fn(async () => undefined),
     ...overrides,
@@ -54,7 +55,13 @@ describe('notification recall processor', () => {
     expect(result).toEqual({ recallsCreated: ['recall-1'] });
     expect(store.insertRecall).toHaveBeenCalledWith(expect.objectContaining({
       reach_channel: 'subscription',
+      delivery_status: 'pending',
+      delivered_at: null,
       recall_of_notification_id: 'notification-1',
+    }));
+    expect(store.deliverRecall).toHaveBeenCalledWith(expect.objectContaining({
+      recallId: 'recall-1',
+      channel: 'subscription',
     }));
     expect(store.incrementRecallCount).toHaveBeenCalledWith('notification-1', 1);
   });
@@ -111,6 +118,7 @@ describe('notification recall processor', () => {
     });
 
     expect(result).toEqual({ recallsCreated: [] });
+    expect(store.deliverRecall).not.toHaveBeenCalled();
     expect(store.incrementRecallCount).toHaveBeenCalledWith('notification-1', 1);
   });
 
@@ -126,6 +134,7 @@ describe('notification recall processor', () => {
 
     expect(result).toEqual({ recallsCreated: [] });
     expect(store.insertRecall).not.toHaveBeenCalled();
+    expect(store.deliverRecall).not.toHaveBeenCalled();
   });
 
   it('logs recall failure when recall insertion throws', async () => {
@@ -145,5 +154,26 @@ describe('notification recall processor', () => {
       channel: 'subscription',
       errorMessage: 'insert failed',
     }));
+  });
+
+  it('records a consumed recall attempt when external delivery fails so the next channel can take over later', async () => {
+    const store = buildStore({
+      deliverRecall: vi.fn(async () => ({
+        status: 'failed',
+        errorMessage: 'subscription webhook missing',
+      })),
+    });
+
+    const result = await processNotificationRecalls({
+      now: new Date('2026-04-03T10:06:00.000Z'),
+      store,
+    });
+
+    expect(result).toEqual({ recallsCreated: [] });
+    expect(store.deliverRecall).toHaveBeenCalledWith(expect.objectContaining({
+      recallId: 'recall-1',
+      channel: 'subscription',
+    }));
+    expect(store.incrementRecallCount).toHaveBeenCalledWith('notification-1', 1);
   });
 });

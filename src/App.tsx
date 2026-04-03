@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import ActivitySlotConversionTracker from "@/components/home/ActivitySlotConversionTracker";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { CityProvider } from "@/contexts/CityContext";
 import RequireAuth from "@/components/auth/RequireAuth";
@@ -36,6 +37,7 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter>
+            <ActivitySlotConversionTracker />
             <Routes>
               {/* Public routes */}
               <Route path="/" element={<Home />} />

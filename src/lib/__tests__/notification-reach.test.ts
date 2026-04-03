@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildNotificationDeliveryFields,
+  buildNotificationDeliveryLogFields,
   buildNotificationOpenPatch,
   buildNotificationReachPlan,
   isNotificationWithinFrequencyWindow,
@@ -159,6 +160,32 @@ describe('notification reach helpers', () => {
     })).toEqual({
       read: true,
       read_at: '2026-04-03T10:00:00.000Z',
+    });
+  });
+
+  it('builds delivery log fields for successful sends', () => {
+    const plan = buildNotificationReachPlan({
+      eventKey: 'report_result',
+      audienceRole: 'reported_user',
+    });
+
+    expect(buildNotificationDeliveryLogFields({
+      plan,
+      status: 'sent',
+      notificationType: 'application_update',
+      metadata: {
+        report_id: 'report-1',
+      },
+    })).toEqual({
+      event_key: 'report_result',
+      audience_role: 'reported_user',
+      channel: 'in_app',
+      status: 'sent',
+      notification_type: 'application_update',
+      error_message: null,
+      metadata: {
+        report_id: 'report-1',
+      },
     });
   });
 });

@@ -38,6 +38,12 @@ const queryState = vi.hoisted(() => ({
 
 const supabaseMock = vi.hoisted(() => ({
   from: vi.fn((table: string) => ({
+    upsert: vi.fn(async (payload: any) => {
+      supabaseCalls.push({ table, action: 'upsert', payload });
+      const failure = supabaseFailures.byTableAction[`${table}:upsert`];
+      if (failure) return { error: { message: failure } };
+      return { error: null };
+    }),
     insert: vi.fn(async (payload: any) => {
       supabaseCalls.push({ table, action: 'insert', payload });
       const failure = supabaseFailures.byTableAction[`${table}:insert`];
@@ -113,6 +119,7 @@ vi.mock('@tanstack/react-query', async () => {
         'admin-invite-bindings': queryState.inviteBindings,
         'admin-system-settings': queryState.systemSettings,
         'admin-banned-words': queryState.bannedWords,
+        'admin-activity-slot-events': [],
       };
       return { data: map[queryKey[0]] ?? [], isLoading: false };
     },
@@ -180,6 +187,13 @@ describe('AdminPage', () => {
           && c.payload.metadata?.audience_role === 'reported_user',
       )).toBe(true);
     });
+    expect(supabaseCalls.some(
+      (c) => c.table === 'notification_delivery_logs'
+        && c.action === 'insert'
+        && c.payload.status === 'sent'
+        && c.payload.event_key === 'report_result'
+        && c.payload.audience_role === 'reported_user',
+    )).toBe(true);
   });
 
   it('shows warning when report result notification fails after resolve succeeds', async () => {
@@ -227,5 +241,74 @@ describe('AdminPage', () => {
     await waitFor(() => expect(supabaseCalls.some((c) => c.table === 'banned_words' && c.action === 'insert' && c.payload.word === '新词')).toBe(true));
     await waitFor(() => expect(invalidateBannedWordsCacheMock).toHaveBeenCalled());
     expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '已添加：新词' }));
+  });
+
+  it('saves homepage activity slot configuration from settings tab', async () => {
+    queryState.systemSettings = [
+      { key: 'leave_credit_deduction', value: '3' },
+      { key: 'kick_credit_deduction', value: '5' },
+      { key: 'homepage_activity_slots', value: [] },
+      { key: 'activity_slot_stats', value: { existing: { impressions: 12, clicks: 4, conversions: 1 } } },
+    ];
+
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('tab', { name: '设置' }));
+    await user.click(screen.getByRole('button', { name: '新增活动位' }));
+    await user.type(screen.getByLabelText('活动标题'), '春季冲榜赛');
+    await user.type(screen.getByLabelText('图片地址'), 'https://example.com/spring.png');
+    await user.type(screen.getByLabelText('跳转链接'), '/community');
+    await user.type(screen.getByLabelText('展示城市'), '杭州,成都');
+    await user.type(screen.getByLabelText('排序值'), '8');
+    await user.click(screen.getByRole('button', { name: '保存活动位配置' }));
+
+    await waitFor(() => {
+      expect(supabaseCalls.some((c) =>
+        c.table === 'system_settings'
+        && c.action === 'upsert'
+        && c.payload.key === 'homepage_activity_slots'
+        && Array.isArray(c.payload.value)
+        && c.payload.value.some((item: any) => item.title === '春季冲榜赛' && item.link_url === '/community'),
+      )).toBe(true);
+    });
+
+    expect(screen.getByText('曝光 12 / 点击 4 / 转化 1')).toBeInTheDocument();
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '已保存活动位配置' }));
+  });
+
+  it('replays existing activity slot config into editable form fields', async () => {
+    queryState.systemSettings = [
+      { key: 'leave_credit_deduction', value: '3' },
+      { key: 'kick_credit_deduction', value: '5' },
+      {
+        key: 'homepage_activity_slots',
+        value: [{
+          id: 'existing-slot',
+          title: '已上线活动',
+          image_url: 'https://example.com/existing.png',
+          link_url: '/group/create',
+          city_ids: ['hangzhou'],
+          cta_text: '马上参加',
+          start_at: '2026-04-01T10:00:00.000Z',
+          end_at: '2026-04-09T10:00:00.000Z',
+          sort_order: 3,
+          enabled: true,
+          max_impressions_per_session: 2,
+          created_at: '2026-04-01T10:00:00.000Z',
+          updated_at: '2026-04-01T10:00:00.000Z',
+        }],
+      },
+      { key: 'activity_slot_stats', value: {} },
+    ];
+
+    renderPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: '设置' }));
+
+    expect(await screen.findByDisplayValue('已上线活动')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('https://example.com/existing.png')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('/group/create')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('杭州')).toBeInTheDocument();
   });
 });

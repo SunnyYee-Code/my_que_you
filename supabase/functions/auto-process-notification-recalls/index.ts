@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { buildNotificationDeliveryLogInsert } from "../_shared/notification-delivery-log.ts";
+import { deliverNotificationToChannel } from "../_shared/notification-channel-delivery.ts";
 import {
   processNotificationRecalls,
   type RecallableNotificationRecord,
@@ -32,7 +33,6 @@ Deno.serve(async (req) => {
 
     const admin = createClient(supabaseUrl, serviceRoleKey);
     const now = new Date();
-    const nowIso = now.toISOString();
 
     const result = await processNotificationRecalls({
       now,
@@ -90,6 +90,106 @@ Deno.serve(async (req) => {
           }
 
           throw error;
+        },
+        async deliverRecall({ recallId, notification, channel, now }) {
+          const metadata = parseNotificationReachMetadata(notification.metadata);
+          const deliveryResult = await deliverNotificationToChannel({
+            channel: channel as "subscription" | "sms",
+            eventKey: metadata.event_key ?? "unknown",
+            audienceRole: metadata.audience_role ?? "unknown",
+            notificationId: recallId,
+            userId: notification.user_id,
+            title: notification.title,
+            content: notification.content,
+            linkTo: notification.link_to,
+            metadata: {
+              ...(notification.metadata ?? {}),
+              recall_of_notification_id: notification.id,
+            },
+          });
+
+          if (deliveryResult.ok) {
+            const { error: updateError } = await admin
+              .from("notifications")
+              .update({
+                delivery_status: "sent",
+                delivered_at: now,
+                metadata: {
+                  ...(notification.metadata ?? {}),
+                  recall_channel: channel,
+                  provider_message_id: deliveryResult.providerMessageId ?? null,
+                  provider_response_status: deliveryResult.responseStatus,
+                },
+              })
+              .eq("id", recallId);
+
+            if (updateError) throw updateError;
+
+            const { error: logError } = await admin
+              .from("notification_delivery_logs")
+              .insert(buildNotificationDeliveryLogInsert({
+                userId: notification.user_id,
+                eventKey: metadata.event_key ?? "unknown",
+                audienceRole: metadata.audience_role ?? "unknown",
+                channel: channel as "subscription" | "sms",
+                status: "sent",
+                notificationType: notification.type,
+                sourceNotificationId: recallId,
+                metadata: {
+                  recall_of_notification_id: notification.id,
+                  provider_message_id: deliveryResult.providerMessageId ?? null,
+                  provider_response_status: deliveryResult.responseStatus,
+                },
+              }));
+
+            if (logError) {
+              console.error(`Failed to log recall delivery success for ${recallId}:`, logError.message);
+            }
+
+            return { status: "sent" as const, deliveredAt: now };
+          }
+
+          const { error: updateError } = await admin
+            .from("notifications")
+            .update({
+              delivery_status: "failed",
+              delivered_at: null,
+              metadata: {
+                ...(notification.metadata ?? {}),
+                recall_channel: channel,
+                provider_response_status: deliveryResult.responseStatus,
+                delivery_error_message: deliveryResult.errorMessage ?? null,
+              },
+            })
+            .eq("id", recallId);
+
+          if (updateError) throw updateError;
+
+          const { error: logError } = await admin
+            .from("notification_delivery_logs")
+            .insert(buildNotificationDeliveryLogInsert({
+              userId: notification.user_id,
+              eventKey: metadata.event_key ?? "unknown",
+              audienceRole: metadata.audience_role ?? "unknown",
+              channel: channel as "subscription" | "sms",
+              status: "failed",
+              errorMessage: deliveryResult.errorMessage ?? "unknown_recall_delivery_error",
+              notificationType: notification.type,
+              sourceNotificationId: recallId,
+              metadata: {
+                recall_of_notification_id: notification.id,
+                provider_response_status: deliveryResult.responseStatus,
+              },
+            }));
+
+          if (logError) {
+            console.error(`Failed to log recall delivery failure for ${recallId}:`, logError.message);
+          }
+
+          return {
+            status: "failed" as const,
+            errorMessage: deliveryResult.errorMessage ?? "unknown_recall_delivery_error",
+          };
         },
         async incrementRecallCount(notificationId, nextRecallCount) {
           const { error } = await admin

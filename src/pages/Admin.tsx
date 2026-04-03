@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,10 +17,15 @@ import { useCity } from '@/contexts/CityContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
-import { buildNotificationDeliveryFields, buildNotificationReachPlan } from '@/lib/notification-reach';
+import {
+  buildNotificationDeliveryFields,
+  buildNotificationDeliveryLogFields,
+  buildNotificationReachPlan,
+} from '@/lib/notification-reach';
 import { Users, BarChart3, MapPin, Shield, Search, Plus, Trash2, Pencil, MessageSquare, Star, AlertTriangle, Gamepad2, UserPlus, Ban, ChevronLeft, UserMinus, LogOut } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
+import { aggregateActivitySlotStats, formatActivitySlotCityIds, normalizeActivitySlotCityIds, parseActivitySlotConfigs, parseActivitySlotStats, type ActivitySlotConfig, type ActivitySlotEvent } from '@/lib/activity-slots';
 
 export default function AdminPage() {
   const { toast } = useToast();
@@ -975,22 +980,35 @@ function ReportCard({ report, isSuperAdmin, onUpdate }: any) {
       if (notificationResult.error) {
         await supabase.from('notification_delivery_logs').insert({
           user_id: (report.reported as any).id,
-          event_key: 'report_result',
-          audience_role: 'reported_user',
-          channel: 'in_app',
-          status: 'failed',
-          notification_type: 'application_update',
-          error_message: notificationResult.error.message,
-          metadata: {
-            report_id: report.id,
-            decision,
-          },
+          ...buildNotificationDeliveryLogFields({
+            plan,
+            status: 'failed',
+            notificationType: 'application_update',
+            errorMessage: notificationResult.error.message,
+            metadata: {
+              report_id: report.id,
+              decision,
+            },
+          }),
         } as any);
         toast({
           title: '举报结果通知发送失败',
           description: '举报状态已更新，但消息通知未发送成功，请稍后补发。',
           variant: 'destructive',
         });
+      } else {
+        await supabase.from('notification_delivery_logs').insert({
+          user_id: (report.reported as any).id,
+          ...buildNotificationDeliveryLogFields({
+            plan,
+            status: 'sent',
+            notificationType: 'application_update',
+            metadata: {
+              report_id: report.id,
+              decision,
+            },
+          }),
+        } as any);
       }
     }
 
@@ -1223,6 +1241,7 @@ function SeedTestDataButton({ onSuccess }: { onSuccess: () => void }) {
 // ---- System Settings Panel ----
 function SystemSettingsPanel() {
   const { toast } = useToast();
+  const { allCities } = useCity();
   const queryClient = useQueryClient();
   const [leavePoints, setLeavePoints] = useState<number | null>(null);
   const [kickPoints, setKickPoints] = useState<number | null>(null);
@@ -1289,8 +1308,237 @@ function SystemSettingsPanel() {
           </p>
         </CardContent>
       </Card>
+      <ActivitySlotsPanel settings={settings ?? []} onSaved={() => {
+        queryClient.invalidateQueries({ queryKey: ['admin-system-settings'] });
+        queryClient.invalidateQueries({ queryKey: ['activity-slots'] });
+      }} allCities={allCities} />
       <BannedWordsManager />
     </div>
+  );
+}
+
+type ActivitySlotsPanelProps = {
+  settings: Array<{ key: string; value: any }>;
+  onSaved: () => void;
+  allCities: Array<{ id: string; name: string }>;
+};
+
+type ActivitySlotDraft = {
+  id: string;
+  title: string;
+  subtitle: string;
+  image_url: string;
+  link_url: string;
+  cta_text: string;
+  city_ids_text: string;
+  start_at: string;
+  end_at: string;
+  sort_order: string;
+  enabled: boolean;
+  max_impressions_per_session: string;
+};
+
+function createActivitySlotDraft(allCities: Array<{ id: string; name: string }>, source?: Partial<ActivitySlotConfig>): ActivitySlotDraft {
+  return {
+    id: source?.id ?? `activity-${Date.now()}`,
+    title: source?.title ?? '',
+    subtitle: source?.subtitle ?? '',
+    image_url: source?.image_url ?? '',
+    link_url: source?.link_url ?? '',
+    cta_text: source?.cta_text ?? '',
+    city_ids_text: source?.city_ids ? formatActivitySlotCityIds(source.city_ids, allCities) : '',
+    start_at: source?.start_at ?? '',
+    end_at: source?.end_at ?? '',
+    sort_order: source?.sort_order !== undefined ? String(source.sort_order) : '10',
+    enabled: source?.enabled ?? true,
+    max_impressions_per_session:
+      source?.max_impressions_per_session === null || source?.max_impressions_per_session === undefined
+        ? ''
+        : String(source.max_impressions_per_session),
+  };
+}
+
+function ActivitySlotsPanel({ settings, onSaved, allCities }: ActivitySlotsPanelProps) {
+  const { toast } = useToast();
+  const rawActivityConfigValue = settings.find((item) => item.key === 'homepage_activity_slots')?.value;
+  const rawActivityStatsValue = settings.find((item) => item.key === 'activity_slot_stats')?.value;
+  const activityConfigs = useMemo(() => parseActivitySlotConfigs(rawActivityConfigValue), [rawActivityConfigValue]);
+  const legacyActivityStats = useMemo(() => parseActivitySlotStats(rawActivityStatsValue), [rawActivityStatsValue]);
+  const { data: activityEventStats = legacyActivityStats } = useQuery({
+    queryKey: ['admin-activity-slot-events'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('activity_slot_events' as any).select('slot_id, event_type, created_at');
+      if (error) throw error;
+      return aggregateActivitySlotStats((data ?? []) as Array<{ slot_id: string; event_type: ActivitySlotEvent; created_at?: string | null }>);
+    },
+  });
+  const activityStats = Object.keys(activityEventStats).length > 0 ? activityEventStats : legacyActivityStats;
+  const initialDrafts = useMemo(
+    () => (activityConfigs.length > 0 ? activityConfigs.map((item) => createActivitySlotDraft(allCities, item)) : []),
+    [activityConfigs, allCities],
+  );
+  const [drafts, setDrafts] = useState<ActivitySlotDraft[]>(() => (
+    initialDrafts
+  ));
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setDrafts(initialDrafts);
+  }, [initialDrafts]);
+
+  const updateDraft = (id: string, patch: Partial<ActivitySlotDraft>) => {
+    setDrafts((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
+  };
+
+  const handleAddDraft = () => {
+    setDrafts((current) => [...current, createActivitySlotDraft(allCities)]);
+  };
+
+  const handleDeleteDraft = (id: string) => {
+    setDrafts((current) => current.filter((item) => item.id !== id));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const now = new Date().toISOString();
+      const payload = drafts
+        .filter((item) => item.title.trim() && item.image_url.trim() && item.link_url.trim())
+        .map((item) => ({
+          id: item.id,
+          title: item.title.trim(),
+          subtitle: item.subtitle.trim(),
+          image_url: item.image_url.trim(),
+          link_url: item.link_url.trim(),
+          cta_text: item.cta_text.trim() || '查看活动',
+          city_ids: normalizeActivitySlotCityIds(item.city_ids_text, allCities),
+          start_at: item.start_at.trim() || null,
+          end_at: item.end_at.trim() || null,
+          sort_order: Number(item.sort_order || 0),
+          enabled: item.enabled,
+          max_impressions_per_session: item.max_impressions_per_session.trim() ? Number(item.max_impressions_per_session) : null,
+          created_at: now,
+          updated_at: now,
+        }))
+        .sort((left, right) => left.sort_order - right.sort_order);
+
+      const { error } = await supabase.from('system_settings').upsert({
+        key: 'homepage_activity_slots',
+        value: payload as any,
+      });
+
+      if (error) throw error;
+
+      toast({ title: '已保存活动位配置' });
+      onSaved();
+    } catch (err: any) {
+      toast({ title: '保存活动位失败', description: err.message, variant: 'destructive' });
+    }
+    setSaving(false);
+  };
+
+  return (
+    <Card>
+      <CardContent className="p-4 space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-primary" /> 首页活动位
+            </h3>
+            <p className="text-sm text-muted-foreground mt-1">支持标题、图片、跳转链接、展示时间、城市范围与曝光频控配置。</p>
+          </div>
+          <Button size="sm" variant="outline" onClick={handleAddDraft}>新增活动位</Button>
+        </div>
+
+        <div className="space-y-4">
+          {Object.keys(activityStats).length > 0 && (
+            <div className="grid md:grid-cols-3 gap-3">
+              {Object.entries(activityStats).map(([slotId, stats]) => (
+                <div key={slotId} className="rounded-xl border border-dashed p-3 bg-muted/30">
+                  <p className="text-xs text-muted-foreground">{slotId}</p>
+                  <p className="text-sm font-medium">曝光 {stats.impressions} / 点击 {stats.clicks} / 转化 {stats.conversions}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {drafts.map((draft, index) => {
+            const stats = activityStats[draft.id];
+            return (
+              <div key={draft.id} className="rounded-xl border p-4 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium">活动位 {index + 1}</p>
+                    {stats && (
+                      <p className="text-xs text-muted-foreground">
+                        曝光 {stats.impressions} / 点击 {stats.clicks} / 转化 {stats.conversions}
+                      </p>
+                    )}
+                  </div>
+                  {drafts.length > 1 && (
+                    <Button size="sm" variant="ghost" onClick={() => handleDeleteDraft(draft.id)}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  )}
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor={`activity-title-${draft.id}`}>活动标题</Label>
+                    <Input id={`activity-title-${draft.id}`} value={draft.title} onChange={(e) => updateDraft(draft.id, { title: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`activity-image-${draft.id}`}>图片地址</Label>
+                    <Input id={`activity-image-${draft.id}`} value={draft.image_url} onChange={(e) => updateDraft(draft.id, { image_url: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`activity-link-${draft.id}`}>跳转链接</Label>
+                    <Input id={`activity-link-${draft.id}`} value={draft.link_url} onChange={(e) => updateDraft(draft.id, { link_url: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`activity-city-${draft.id}`}>展示城市</Label>
+                    <Input id={`activity-city-${draft.id}`} placeholder="杭州,成都" value={draft.city_ids_text} onChange={(e) => updateDraft(draft.id, { city_ids_text: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`activity-sort-${draft.id}`}>排序值</Label>
+                    <Input id={`activity-sort-${draft.id}`} type="number" value={draft.sort_order} onChange={(e) => updateDraft(draft.id, { sort_order: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`activity-cta-${draft.id}`}>按钮文案</Label>
+                    <Input id={`activity-cta-${draft.id}`} value={draft.cta_text} onChange={(e) => updateDraft(draft.id, { cta_text: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`activity-start-${draft.id}`}>开始时间</Label>
+                    <Input id={`activity-start-${draft.id}`} placeholder="2026-04-03T09:00:00.000Z" value={draft.start_at} onChange={(e) => updateDraft(draft.id, { start_at: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`activity-end-${draft.id}`}>结束时间</Label>
+                    <Input id={`activity-end-${draft.id}`} placeholder="2026-04-10T23:59:59.000Z" value={draft.end_at} onChange={(e) => updateDraft(draft.id, { end_at: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`activity-limit-${draft.id}`}>会话曝光上限</Label>
+                    <Input id={`activity-limit-${draft.id}`} type="number" min={1} placeholder="留空为不限" value={draft.max_impressions_per_session} onChange={(e) => updateDraft(draft.id, { max_impressions_per_session: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`activity-subtitle-${draft.id}`}>活动副标题</Label>
+                    <Textarea id={`activity-subtitle-${draft.id}`} value={draft.subtitle} onChange={(e) => updateDraft(draft.id, { subtitle: e.target.value })} />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Switch checked={draft.enabled} onCheckedChange={(checked) => updateDraft(draft.id, { enabled: checked })} />
+                  <Label>上线</Label>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <Button size="sm" onClick={handleSave} disabled={saving}>
+          {saving ? '保存中...' : '保存活动位配置'}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 

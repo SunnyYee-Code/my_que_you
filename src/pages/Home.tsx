@@ -13,10 +13,12 @@ import { useGeolocation, getDistanceKm, formatDistance } from '@/hooks/useGeoloc
 import { format, isToday, isTomorrow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import HomeNavBar from '@/components/home/HomeNavBar';
 import HomeFooter from '@/components/home/HomeFooter';
 import { inferPreferredPlayStyles, sortGroupsForDisplay } from '@/lib/group-recommendation';
+import { useActivitySlots } from '@/hooks/useActivitySlots';
+import { buildActivitySlotHref } from '@/lib/activity-slots';
 
 function formatSmartTime(dateStr: string) {
   const d = new Date(dateStr);
@@ -30,6 +32,8 @@ export default function HomePage() {
   const { currentCity } = useCity();
   const { user } = useAuth();
   const { position, loading: geoLoading, error: geoError, requestLocation } = useGeolocation();
+  const { slots: activitySlots, trackActivityEvent, markSlotImpressionSeen } = useActivitySlots(currentCity.id, [currentCity.name]);
+  const trackedImpressionIdsRef = useRef<Set<string>>(new Set());
 
   const { data: groups = [], isLoading } = useGroupsByCity(currentCity.id);
   const { data: myGroups } = useMyGroups();
@@ -39,6 +43,18 @@ export default function HomePage() {
       requestLocation();
     }
   }, [groups.length, position, geoLoading, geoError, requestLocation]);
+
+  useEffect(() => {
+    activitySlots.forEach((slot) => {
+      if (trackedImpressionIdsRef.current.has(slot.id)) return;
+      void trackActivityEvent(slot.id, 'impression')
+        .then(() => {
+          trackedImpressionIdsRef.current.add(slot.id);
+          markSlotImpressionSeen(slot.id);
+        })
+        .catch(() => undefined);
+    });
+  }, [activitySlots, markSlotImpressionSeen, trackActivityEvent]);
 
   const previewGroups = useMemo(() => {
     const active = groups.filter(g => g.status === 'OPEN' || g.status === 'FULL');
@@ -133,6 +149,65 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {activitySlots.length > 0 && (
+        <section className="px-6 lg:px-20 py-8 bg-gradient-to-b from-background to-muted/30 border-b border-border/50">
+          <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {activitySlots.map((slot) => {
+              const href = buildActivitySlotHref(slot.link_url, slot.id);
+              const slotCityIds = Array.isArray(slot.city_ids) ? slot.city_ids : [];
+              const handleClick = async () => {
+                if (!href) return;
+
+                const trackClickPromise = trackActivityEvent(slot.id, 'click').catch(() => undefined);
+                if (href.startsWith('/')) {
+                  navigate(href);
+                  void trackClickPromise;
+                  return;
+                }
+
+                window.open(href, '_blank', 'noopener,noreferrer');
+                void Promise.allSettled([
+                  trackClickPromise,
+                  trackActivityEvent(slot.id, 'conversion'),
+                ]);
+              };
+
+              return (
+                <Card key={slot.id} className="overflow-hidden border-primary/10 shadow-sm">
+                  <CardContent className="p-0">
+                    <div className="grid md:grid-cols-[1.2fr_1fr] items-stretch">
+                      <div className="relative min-h-[180px] bg-muted">
+                        <img src={slot.image_url} alt={slot.title} className="absolute inset-0 h-full w-full object-cover" />
+                        <div className="absolute inset-0 bg-gradient-to-r from-black/55 via-black/20 to-transparent" />
+                        <div className="relative h-full p-6 flex flex-col justify-end text-white">
+                          <Badge className="mb-3 w-fit bg-white/15 text-white hover:bg-white/15">主题活动</Badge>
+                          <h2 className="text-2xl font-black tracking-tight">{slot.title}</h2>
+                          {slot.subtitle && <p className="mt-2 text-sm text-white/85 max-w-md">{slot.subtitle}</p>}
+                        </div>
+                      </div>
+                      <div className="p-6 flex flex-col justify-between gap-4 bg-card">
+                        <div className="space-y-2">
+                          <p className="text-sm text-muted-foreground">活动位已按城市、上下线时间和曝光频次自动筛选。</p>
+                          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                            <span className="px-2 py-1 rounded-full bg-muted">首页活动位</span>
+                            <span className="px-2 py-1 rounded-full bg-muted">
+                              {slotCityIds.length > 0 ? `城市 ${slotCityIds.join(' / ')}` : '全城投放'}
+                            </span>
+                          </div>
+                        </div>
+                        <Button onClick={handleClick} disabled={!href}>
+                          {slot.cta_text || '查看活动'}
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* How it works */}
       <section className="px-6 lg:px-20 py-12 md:py-16 border-y border-border/50 bg-muted/20">

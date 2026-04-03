@@ -370,6 +370,15 @@ describe('GroupDetailPage', () => {
           && c.payload.metadata?.audience_role === 'host',
       ),
     ).toBe(true);
+    expect(
+      supabaseCalls.some(
+        c => c.table === 'notification_delivery_logs'
+          && c.action === 'insert'
+          && c.payload.status === 'sent'
+          && c.payload.event_key === 'emergency_fill'
+          && c.payload.audience_role === 'host',
+      ),
+    ).toBe(true);
     expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '已退出拼团' }));
     expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '⚠️ 信用分已扣除' }));
   });
@@ -391,6 +400,12 @@ describe('GroupDetailPage', () => {
         && c.payload.reach_channel === 'in_app'
         && c.payload.delivery_status === 'sent'
         && c.payload.metadata?.audience_role === 'member',
+    )).toBe(true);
+    expect(supabaseCalls.some(
+      c => c.table === 'notification_delivery_logs'
+        && c.action === 'insert'
+        && c.payload.status === 'sent'
+        && c.payload.audience_role === 'member',
     )).toBe(true);
     expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '已移除成员' }));
   });
