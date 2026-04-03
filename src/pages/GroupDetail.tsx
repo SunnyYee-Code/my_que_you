@@ -32,6 +32,10 @@ import {
   createGroupSharePosterFile,
 } from '@/lib/group-share-poster';
 import {
+  buildNotificationDeliveryFields,
+  buildNotificationReachPlan,
+} from '@/lib/notification-reach';
+import {
   createDefaultRealNameSnapshot,
   shouldBlockByRestrictionLevel,
   shouldShowRealNameGuard,
@@ -299,12 +303,23 @@ export default function GroupDetailPage() {
       const emergencyFillSuffix = nextEmergencyFillMeta.isEmergencyFill
         ? ` 当前已触发紧急补位（${nextEmergencyFillMeta.countdownText}）。`
         : '';
+      const hostNotificationPlan = buildNotificationReachPlan({
+        eventKey: nextEmergencyFillMeta.isEmergencyFill ? 'emergency_fill' : 'membership_change',
+        audienceRole: 'host',
+      });
       const notificationResult = await supabase.from('notifications').insert({
         user_id: group.host_id,
         type: 'group_cancelled' as any,
         title: '成员退出拼团',
         content: `${leaverName} 已退出你的拼团${isWithin60Min && leaveReason ? '，理由：' + leaveReason : ''}。${emergencyFillSuffix}`.trim(),
         link_to: `/group/${group.id}`,
+        ...buildNotificationDeliveryFields({
+          plan: hostNotificationPlan,
+          metadata: {
+            group_id: group.id,
+            emergency_fill: nextEmergencyFillMeta.isEmergencyFill,
+          },
+        }),
       });
       if (notificationResult.error) {
         warnings.push({
@@ -388,12 +403,23 @@ export default function GroupDetailPage() {
       }
 
       // Send notification
+      const kickedMemberNotificationPlan = buildNotificationReachPlan({
+        eventKey: 'membership_change',
+        audienceRole: 'member',
+      });
       const notificationResult = await supabase.from('notifications').insert({
         user_id: kickTargetId,
         type: 'group_cancelled' as any,
         title: '被移出拼团',
         content: `房主将你移出了拼团，理由：${kickReason}`,
         link_to: `/my-groups`,
+        ...buildNotificationDeliveryFields({
+          plan: kickedMemberNotificationPlan,
+          metadata: {
+            group_id: group.id,
+            kicked_by: user!.id,
+          },
+        }),
       });
       if (notificationResult.error) {
         warnings.push({

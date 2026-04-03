@@ -50,7 +50,7 @@ export default function NotificationsPage() {
                   key={n.id}
                   className={cn('cursor-pointer transition-colors', !n.read && 'border-primary/30 bg-primary/5')}
                   onClick={() => {
-                    markRead.mutate(n.id);
+                    markRead.mutate(n);
                     if (n.link_to) navigate(n.link_to);
                   }}
                 >

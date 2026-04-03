@@ -3,6 +3,7 @@ import {
   buildBackendRealNameSnapshot,
   evaluateRealNameSubmission,
 } from '@/lib/real-name-backend';
+import { buildRealNameNotificationInsert } from '../../../supabase/functions/_shared/real-name-notification';
 
 describe('real-name-backend helpers', () => {
   it('auto-approves low-risk valid submissions', () => {
@@ -67,6 +68,47 @@ describe('real-name-backend helpers', () => {
       review_required: true,
       restriction_level: 'limited',
       restriction_scenes: ['group_create', 'group_join'],
+    });
+  });
+
+  it('builds submission notification payload without recall fallback', () => {
+    expect(buildRealNameNotificationInsert({
+      userId: 'user-1',
+      type: 'real_name_submitted',
+      title: '实名认证提交成功',
+      content: '资料已提交，等待平台审核。',
+      deliveredAt: '2026-04-03T10:00:00.000Z',
+    })).toMatchObject({
+      user_id: 'user-1',
+      reach_channel: 'in_app',
+      delivery_status: 'sent',
+      delivered_at: '2026-04-03T10:00:00.000Z',
+      metadata: {
+        event_key: 'review_submission',
+        audience_role: 'applicant',
+        fallback_channels: [],
+        max_recall_count: 0,
+        recall_delay_minutes: null,
+      },
+    });
+  });
+
+  it('builds review result notification payload with fallback recall metadata', () => {
+    expect(buildRealNameNotificationInsert({
+      userId: 'user-1',
+      type: 'real_name_rejected',
+      title: '实名认证未通过',
+      content: '请根据驳回原因修正后重新提交。',
+      deliveredAt: '2026-04-03T10:00:00.000Z',
+    })).toMatchObject({
+      user_id: 'user-1',
+      metadata: {
+        event_key: 'review_result',
+        audience_role: 'applicant',
+        fallback_channels: ['subscription'],
+        max_recall_count: 1,
+        recall_delay_minutes: 30,
+      },
     });
   });
 });

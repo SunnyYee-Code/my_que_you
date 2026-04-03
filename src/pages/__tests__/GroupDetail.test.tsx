@@ -363,7 +363,11 @@ describe('GroupDetailPage', () => {
         c => c.table === 'notifications'
           && c.action === 'insert'
           && typeof c.payload?.content === 'string'
-          && c.payload.content.includes('紧急补位'),
+          && c.payload.content.includes('紧急补位')
+          && c.payload.reach_channel === 'in_app'
+          && c.payload.delivery_status === 'sent'
+          && c.payload.metadata?.event_key === 'emergency_fill'
+          && c.payload.metadata?.audience_role === 'host',
       ),
     ).toBe(true);
     expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '已退出拼团' }));
@@ -381,7 +385,13 @@ describe('GroupDetailPage', () => {
     await user.type(screen.getByPlaceholderText('请说明移除原因...'), '多次迟到');
     await user.click(confirm);
     await waitFor(() => expect(supabaseCalls.some(c => c.table === 'group_member_exits' && c.action === 'insert' && c.payload.exit_type === 'kicked')).toBe(true));
-    expect(supabaseCalls.some(c => c.table === 'notifications' && c.action === 'insert')).toBe(true);
+    expect(supabaseCalls.some(
+      c => c.table === 'notifications'
+        && c.action === 'insert'
+        && c.payload.reach_channel === 'in_app'
+        && c.payload.delivery_status === 'sent'
+        && c.payload.metadata?.audience_role === 'member',
+    )).toBe(true);
     expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '已移除成员' }));
   });
 

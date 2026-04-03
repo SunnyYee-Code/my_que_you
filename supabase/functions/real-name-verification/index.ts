@@ -7,6 +7,8 @@ import {
   REAL_NAME_STATUS,
   sha256Hex,
 } from "../_shared/real-name.ts";
+import { buildNotificationDeliveryLogInsert } from "../_shared/notification-delivery-log.ts";
+import { buildRealNameNotificationInsert } from "../_shared/real-name-notification.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -309,14 +311,27 @@ async function createAudit(admin: ReturnType<typeof createClient>, input: {
 }
 
 async function createNotification(admin: ReturnType<typeof createClient>, userId: string, type: string, title: string, content: string) {
-  const { error } = await admin.from("notifications").insert({
-    user_id: userId,
-    type,
+  const now = new Date().toISOString();
+  const { error } = await admin.from("notifications").insert(buildRealNameNotificationInsert({
+    userId,
+    type: type as "real_name_submitted" | "real_name_approved" | "real_name_rejected",
     title,
     content,
-    link_to: "/settings",
-  });
-  if (error) throw error;
+    deliveredAt: now,
+  }));
+  if (!error) return;
+
+  const isReviewResult = type === "real_name_approved" || type === "real_name_rejected";
+  await admin.from("notification_delivery_logs").insert(buildNotificationDeliveryLogInsert({
+    userId,
+    eventKey: isReviewResult ? "review_result" : "review_submission",
+    audienceRole: "applicant",
+    channel: "in_app",
+    status: "failed",
+    errorMessage: error.message,
+    notificationType: type,
+  }));
+  throw error;
 }
 
 function jsonResponse(payload: unknown, status = 200) {

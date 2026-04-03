@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  buildGroupStartReminderNotificationInsert,
   deliverGroupStartReminder,
   type ReminderDeliveryStore,
   type ReminderStoreRecord,
@@ -27,6 +28,7 @@ function buildStore(overrides: Partial<ReminderDeliveryStore> = {}): ReminderDel
     sendNotification: vi.fn(async () => ({ id: 'notification-1' })),
     markSent: vi.fn(async () => true),
     markFailed: vi.fn(async () => undefined),
+    logDeliveryFailure: vi.fn(async () => undefined),
     ...overrides,
   };
 }
@@ -45,6 +47,7 @@ describe('group-start-reminder delivery', () => {
     title: '你加入的拼团即将开局',
     content: '请准时到场',
     groupId: 'group-1',
+    role: 'member' as const,
   };
 
   it('skips sending when another worker has already claimed the reminder', async () => {
@@ -78,5 +81,70 @@ describe('group-start-reminder delivery', () => {
     expect(result).toEqual({ outcome: 'failed', reason: 'mark_sent_failed' });
     expect(store.sendNotification).toHaveBeenCalledTimes(1);
     expect(store.markFailed).not.toHaveBeenCalled();
+  });
+
+  it('builds host reminder insert payload with host audience metadata', () => {
+    expect(buildGroupStartReminderNotificationInsert({
+      userId: 'host-1',
+      role: 'host',
+      title: '你的拼团即将开局',
+      content: '请尽快确认到场安排。',
+      groupId: 'group-1',
+      deliveredAt: '2026-04-03T10:00:00.000Z',
+    })).toMatchObject({
+      user_id: 'host-1',
+      type: 'group_start_reminder',
+      link_to: '/group/group-1',
+      reach_channel: 'in_app',
+      delivery_status: 'sent',
+      delivered_at: '2026-04-03T10:00:00.000Z',
+      recall_count: 0,
+      metadata: {
+        event_key: 'group_start_reminder',
+        audience_role: 'host',
+        fallback_channels: ['subscription'],
+      },
+    });
+  });
+
+  it('builds member reminder insert payload with member audience metadata', () => {
+    expect(buildGroupStartReminderNotificationInsert({
+      userId: 'member-1',
+      role: 'member',
+      title: '你加入的拼团即将开局',
+      content: '请准时到场。',
+      groupId: 'group-1',
+      deliveredAt: '2026-04-03T10:00:00.000Z',
+    })).toMatchObject({
+      user_id: 'member-1',
+      metadata: {
+        event_key: 'group_start_reminder',
+        audience_role: 'member',
+      },
+    });
+  });
+
+  it('logs delivery failure when notification send throws', async () => {
+    const store = buildStore({
+      sendNotification: vi.fn(async () => {
+        throw new Error('insert failed');
+      }),
+    });
+
+    const result = await deliverGroupStartReminder({
+      plan,
+      notification,
+      now: new Date('2026-03-30T19:35:00.000Z'),
+      store,
+    });
+
+    expect(result).toEqual({ outcome: 'failed', reason: 'notification_send_failed' });
+    expect(store.markFailed).toHaveBeenCalledWith(expect.objectContaining({ errorMessage: 'insert failed' }));
+    expect(store.logDeliveryFailure).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'user-1',
+      role: 'member',
+      groupId: 'group-1',
+      errorMessage: 'insert failed',
+    }));
   });
 });

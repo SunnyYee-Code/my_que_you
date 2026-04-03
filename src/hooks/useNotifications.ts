@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffect } from 'react';
+import { buildNotificationOpenPatch } from '@/lib/notification-reach';
 
 export function useNotifications() {
   const { user } = useAuth();
@@ -51,11 +52,22 @@ export function useMarkNotificationRead() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (notificationId: string) => {
+    mutationFn: async (notification: {
+      id: string;
+      read: boolean;
+      read_at: string | null;
+      clicked_at: string | null;
+      link_to: string | null;
+    }) => {
       const { error } = await supabase
         .from('notifications')
-        .update({ read: true })
-        .eq('id', notificationId);
+        .update(buildNotificationOpenPatch({
+          read: notification.read,
+          readAt: notification.read_at,
+          clickedAt: notification.clicked_at,
+          hasNavigationTarget: Boolean(notification.link_to),
+        }))
+        .eq('id', notification.id);
       if (error) throw error;
     },
     onSuccess: () => {

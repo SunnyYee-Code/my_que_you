@@ -17,6 +17,7 @@ import { useCity } from '@/contexts/CityContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
+import { buildNotificationDeliveryFields, buildNotificationReachPlan } from '@/lib/notification-reach';
 import { Users, BarChart3, MapPin, Shield, Search, Plus, Trash2, Pencil, MessageSquare, Star, AlertTriangle, Gamepad2, UserPlus, Ban, ChevronLeft, UserMinus, LogOut } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
@@ -76,7 +77,7 @@ export default function AdminPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('reports')
-        .select('*, reporter:profiles!reports_reporter_id_fkey(nickname), reported:profiles!reports_reported_id_fkey(nickname)')
+        .select('*, reporter:profiles!reports_reporter_id_fkey(id, nickname), reported:profiles!reports_reported_id_fkey(id, nickname)')
         .order('created_at', { ascending: false });
       if (error) throw error;
       return data;
@@ -941,8 +942,60 @@ function ReportCard({ report, isSuperAdmin, onUpdate }: any) {
       _report_id: report.id,
       _decision: decision,
     });
-    if (error) toast({ title: '操作失败', description: error.message, variant: 'destructive' });
-    else { toast({ title: `举报已${decision === 'resolved' ? '处理' : '驳回'}` }); onUpdate(); }
+    if (error) {
+      toast({ title: '操作失败', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    const plan = buildNotificationReachPlan({
+      eventKey: 'report_result',
+      audienceRole: 'reported_user',
+    });
+
+    const title = decision === 'resolved' ? '举报处理结果已更新' : '举报申诉结果已更新';
+    const content = decision === 'resolved'
+      ? '平台已处理针对你的举报，请留意后续账号状态与社区规范。'
+      : '平台已驳回针对你的举报，本次处理不会追加处罚。';
+
+    if ((report.reported as any)?.id) {
+      const notificationResult = await supabase.from('notifications').insert({
+        user_id: (report.reported as any).id,
+        type: 'application_update' as any,
+        title,
+        content,
+        link_to: '/settings',
+        ...buildNotificationDeliveryFields({
+          plan,
+          metadata: {
+            report_id: report.id,
+            decision,
+          },
+        }),
+      });
+      if (notificationResult.error) {
+        await supabase.from('notification_delivery_logs').insert({
+          user_id: (report.reported as any).id,
+          event_key: 'report_result',
+          audience_role: 'reported_user',
+          channel: 'in_app',
+          status: 'failed',
+          notification_type: 'application_update',
+          error_message: notificationResult.error.message,
+          metadata: {
+            report_id: report.id,
+            decision,
+          },
+        } as any);
+        toast({
+          title: '举报结果通知发送失败',
+          description: '举报状态已更新，但消息通知未发送成功，请稍后补发。',
+          variant: 'destructive',
+        });
+      }
+    }
+
+    toast({ title: `举报已${decision === 'resolved' ? '处理' : '驳回'}` });
+    onUpdate();
   };
 
   const handleDelete = async () => {

@@ -1,5 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
+import { buildNotificationDeliveryLogInsert } from "../_shared/notification-delivery-log.ts";
 import { buildSnapshot, REAL_NAME_STATUS } from "../_shared/real-name.ts";
+import { buildRealNameNotificationInsert } from "../_shared/real-name-notification.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -95,16 +97,28 @@ Deno.serve(async (req) => {
       });
     if (auditError) throw auditError;
 
+    const notificationSentAt = new Date().toISOString();
     const { error: notificationError } = await admin
       .from("notifications")
-      .insert({
-        user_id: request.user_id,
+      .insert(buildRealNameNotificationInsert({
+        userId: request.user_id,
         type: action === "approve" ? "real_name_approved" : "real_name_rejected",
         title: action === "approve" ? "实名认证已通过" : "实名认证未通过",
         content: action === "approve" ? "你的实名认证已通过平台审核。" : (reasonText ?? "请根据驳回原因修正后重新提交。"),
-        link_to: "/settings",
-      });
-    if (notificationError) throw notificationError;
+        deliveredAt: notificationSentAt,
+      }));
+    if (notificationError) {
+      await admin.from("notification_delivery_logs").insert(buildNotificationDeliveryLogInsert({
+        userId: request.user_id,
+        eventKey: "review_result",
+        audienceRole: "applicant",
+        channel: "in_app",
+        status: "failed",
+        errorMessage: notificationError.message,
+        notificationType: action === "approve" ? "real_name_approved" : "real_name_rejected",
+      }));
+      throw notificationError;
+    }
 
     return new Response(JSON.stringify(buildSnapshot({
       status: nextStatus,

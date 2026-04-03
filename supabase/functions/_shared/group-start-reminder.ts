@@ -47,6 +47,7 @@ export interface ReminderDeliveryStore {
     title: string;
     content: string;
     groupId: string;
+    role: GroupStartReminderRole;
   }): Promise<{ id: string }>;
   markSent(input: {
     reminderId: string;
@@ -55,6 +56,12 @@ export interface ReminderDeliveryStore {
   }): Promise<boolean>;
   markFailed(input: {
     reminderId: string;
+    errorMessage: string;
+  }): Promise<void>;
+  logDeliveryFailure(input: {
+    userId: string;
+    role: GroupStartReminderRole;
+    groupId: string;
     errorMessage: string;
   }): Promise<void>;
 }
@@ -144,6 +151,35 @@ export function buildGroupStartReminderNotification(input: ReminderNotificationI
   };
 }
 
+export function buildGroupStartReminderNotificationInsert(input: {
+  userId: string;
+  role: GroupStartReminderRole;
+  title: string;
+  content: string;
+  groupId: string;
+  deliveredAt: string;
+}) {
+  return {
+    user_id: input.userId,
+    type: "group_start_reminder" as const,
+    title: input.title,
+    content: input.content,
+    link_to: `/group/${input.groupId}`,
+    reach_channel: "in_app" as const,
+    delivery_status: "sent" as const,
+    delivered_at: input.deliveredAt,
+    recall_count: 0,
+    metadata: {
+      event_key: "group_start_reminder",
+      audience_role: input.role,
+      fallback_channels: ["subscription"],
+      frequency_window_minutes: 60,
+      max_recall_count: 1,
+      recall_delay_minutes: 10,
+    },
+  };
+}
+
 export async function deliverGroupStartReminder(input: {
   plan: GroupStartReminderPlan;
   notification: {
@@ -151,6 +187,7 @@ export async function deliverGroupStartReminder(input: {
     title: string;
     content: string;
     groupId: string;
+    role: GroupStartReminderRole;
   };
   now?: Date;
   store: ReminderDeliveryStore;
@@ -198,6 +235,12 @@ export async function deliverGroupStartReminder(input: {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "unknown_send_error";
     await input.store.markFailed({ reminderId: claimedReminder.id, errorMessage });
+    await input.store.logDeliveryFailure({
+      userId: input.notification.userId,
+      role: input.notification.role,
+      groupId: input.notification.groupId,
+      errorMessage,
+    });
     return { outcome: "failed" as const, reason: "notification_send_failed" as const };
   }
 }

@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import {
   GROUP_START_REMINDER_ADVANCE_MINUTES,
   buildGroupStartReminderNotification,
+  buildGroupStartReminderNotificationInsert,
   buildGroupStartReminderPlans,
   deliverGroupStartReminder,
   isAuthorizedReminderSchedulerRequest,
@@ -13,6 +14,7 @@ import {
   type ReminderDeliveryStore,
   type ReminderStoreRecord,
 } from "../_shared/group-start-reminder.ts";
+import { buildNotificationDeliveryLogInsert } from "../_shared/notification-delivery-log.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -116,15 +118,17 @@ function createReminderDeliveryStore(admin: ReturnType<typeof createClient>): Re
       return data ? toReminderStoreRecord(data as any) : null;
     },
     async sendNotification(input) {
+      const deliveredAt = new Date().toISOString();
       const { data, error } = await admin
         .from("notifications")
-        .insert({
-          user_id: input.userId,
-          type: "group_start_reminder",
+        .insert(buildGroupStartReminderNotificationInsert({
+          userId: input.userId,
+          role: input.role,
           title: input.title,
           content: input.content,
-          link_to: `/group/${input.groupId}`,
-        })
+          groupId: input.groupId,
+          deliveredAt,
+        }))
         .select("id")
         .single();
 
@@ -163,6 +167,25 @@ function createReminderDeliveryStore(admin: ReturnType<typeof createClient>): Re
 
       if (error) {
         console.error(`Failed to mark reminder ${input.reminderId} failed:`, error.message);
+      }
+    },
+    async logDeliveryFailure(input) {
+      const { error } = await admin
+        .from("notification_delivery_logs")
+        .insert(buildNotificationDeliveryLogInsert({
+          userId: input.userId,
+          eventKey: "group_start_reminder",
+          audienceRole: input.role,
+          channel: "in_app",
+          status: "failed",
+          errorMessage: input.errorMessage,
+          metadata: {
+            group_id: input.groupId,
+          },
+        }));
+
+      if (error) {
+        console.error(`Failed to log reminder delivery failure for ${input.userId}:`, error.message);
       }
     },
   };
@@ -305,6 +328,7 @@ Deno.serve(async (req) => {
             title: notification.title,
             content: notification.content,
             groupId: group.id,
+            role: plan.role,
           },
         });
 

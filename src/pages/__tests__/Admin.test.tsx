@@ -9,6 +9,7 @@ const navigateMock = vi.fn();
 const invalidateQueriesMock = vi.fn();
 const invalidateBannedWordsCacheMock = vi.fn();
 const supabaseCalls: Array<{ table: string; action: string; payload?: any }> = [];
+const supabaseFailures = vi.hoisted(() => ({ byTableAction: {} as Record<string, string> }));
 
 const authState = vi.hoisted(() => ({ user: { id: 'admin-1' }, isSuperAdmin: true }));
 const cityState = vi.hoisted(() => ({ allCities: [{ id: 'chengdu', name: '成都' }, { id: 'hangzhou', name: '杭州' }] }));
@@ -17,7 +18,7 @@ const queryState = vi.hoisted(() => ({
   userRoles: [{ user_id: 'u1', role: 'user' }],
   groupsFull: [{ id: 'g1', address: '天府广场店', status: 'OPEN', host: { id: 'u1', nickname: '牌友A' }, members: [{ user_id: 'u1' }] }],
   playStyles: [{ id: 'ps1', name: '血战到底' }],
-  reports: [{ id: 'r1', reporter: { nickname: '举报人' }, reported: { nickname: '被举报人' }, reason: '辱骂', created_at: '2026-03-25T00:00:00Z' }],
+  reports: [{ id: 'r1', reporter: { id: 'u9', nickname: '举报人' }, reported: { id: 'u8', nickname: '被举报人' }, reason: '辱骂', status: 'pending', created_at: '2026-03-25T00:00:00Z' }],
   reviews: [{ id: 'rv1', reviewer: { nickname: '评价人' }, target: { nickname: '被评价人' }, skill: 5, attitude: 4, punctuality: 5, comment: '不错', created_at: '2026-03-25T00:00:00Z' }],
   appeals: [{ id: 'ap1', user: { id: 'u2', nickname: '申诉人' }, reason: '误扣分', created_at: '2026-03-25T00:00:00Z', change: -3 }],
   exits: [{ id: 'ex1', user: { id: 'u3', nickname: '退出人' }, group: { id: 'g1', address: '天府广场店' }, exit_type: 'left', reason: '有事', credit_change: -3, created_at: '2026-03-25T00:00:00Z' }],
@@ -39,6 +40,8 @@ const supabaseMock = vi.hoisted(() => ({
   from: vi.fn((table: string) => ({
     insert: vi.fn(async (payload: any) => {
       supabaseCalls.push({ table, action: 'insert', payload });
+      const failure = supabaseFailures.byTableAction[`${table}:insert`];
+      if (failure) return { error: { message: failure } };
       return { error: null };
     }),
     delete: vi.fn(() => ({
@@ -55,6 +58,10 @@ const supabaseMock = vi.hoisted(() => ({
     })),
     select: vi.fn(() => ({ eq: vi.fn(() => ({ single: vi.fn(async () => ({ data: { credit_score: 90 }, error: null })) })) })),
   })),
+  rpc: vi.fn(async (_fn: string, payload: any) => {
+    supabaseCalls.push({ table: 'rpc', action: 'call', payload });
+    return { error: null };
+  }),
   functions: { invoke: vi.fn(async () => ({ data: { ok: true }, error: null })) },
 }));
 
@@ -125,6 +132,7 @@ describe('AdminPage', () => {
     invalidateQueriesMock.mockReset();
     invalidateBannedWordsCacheMock.mockReset();
     supabaseCalls.length = 0;
+    supabaseFailures.byTableAction = {};
   });
 
   it('adds and deletes cities from admin tab', async () => {
@@ -154,6 +162,47 @@ describe('AdminPage', () => {
     expect(screen.getByText('申诉人')).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: '退出记录' }));
     expect(screen.getByText('退出人')).toBeInTheDocument();
+  });
+
+  it('notifies reported user after resolving a report', async () => {
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('tab', { name: '举报' }));
+    await user.click(screen.getByRole('button', { name: '处理' }));
+
+    await waitFor(() => {
+      expect(supabaseCalls.some(
+        (c) => c.table === 'notifications'
+          && c.action === 'insert'
+          && c.payload.user_id === 'u8'
+          && c.payload.metadata?.event_key === 'report_result'
+          && c.payload.metadata?.audience_role === 'reported_user',
+      )).toBe(true);
+    });
+  });
+
+  it('shows warning when report result notification fails after resolve succeeds', async () => {
+    supabaseFailures.byTableAction['notifications:insert'] = 'notify failed';
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('tab', { name: '举报' }));
+    await user.click(screen.getByRole('button', { name: '处理' }));
+
+    await waitFor(() => {
+      expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({
+        title: '举报结果通知发送失败',
+        variant: 'destructive',
+      }));
+    });
+    expect(supabaseCalls.some(
+      (c) => c.table === 'notification_delivery_logs'
+        && c.action === 'insert'
+        && c.payload.status === 'failed'
+        && c.payload.event_key === 'report_result',
+    )).toBe(true);
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '举报已处理' }));
   });
 
   it('renders invite attribution data in admin tab', async () => {

@@ -784,31 +784,55 @@ export type Database = {
       }
       notifications: {
         Row: {
+          clicked_at: string | null
           content: string
           created_at: string
+          delivered_at: string | null
+          delivery_status: string
           id: string
           link_to: string | null
+          metadata: Json
           read: boolean
+          read_at: string | null
+          reach_channel: string
+          recall_count: number
+          recall_of_notification_id: string | null
           title: string
           type: Database["public"]["Enums"]["notification_type"]
           user_id: string
         }
         Insert: {
+          clicked_at?: string | null
           content: string
           created_at?: string
+          delivered_at?: string | null
+          delivery_status?: string
           id?: string
           link_to?: string | null
+          metadata?: Json
           read?: boolean
+          read_at?: string | null
+          reach_channel?: string
+          recall_count?: number
+          recall_of_notification_id?: string | null
           title: string
           type: Database["public"]["Enums"]["notification_type"]
           user_id: string
         }
         Update: {
+          clicked_at?: string | null
           content?: string
           created_at?: string
+          delivered_at?: string | null
+          delivery_status?: string
           id?: string
           link_to?: string | null
+          metadata?: Json
           read?: boolean
+          read_at?: string | null
+          reach_channel?: string
+          recall_count?: number
+          recall_of_notification_id?: string | null
           title?: string
           type?: Database["public"]["Enums"]["notification_type"]
           user_id?: string
@@ -819,6 +843,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_recall_of_notification_id_fkey"
+            columns: ["recall_of_notification_id"]
+            isOneToOne: false
+            referencedRelation: "notifications"
             referencedColumns: ["id"]
           },
         ]

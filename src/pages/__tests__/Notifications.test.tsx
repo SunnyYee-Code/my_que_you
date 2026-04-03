@@ -49,6 +49,8 @@ describe('NotificationsPage', () => {
           content: '你的申请已通过',
           created_at: new Date().toISOString(),
           read: false,
+          read_at: null,
+          clicked_at: null,
           link_to: '/group/g1',
         },
       ],
@@ -58,7 +60,10 @@ describe('NotificationsPage', () => {
     renderPage();
     fireEvent.click(screen.getByText('申请状态更新'));
 
-    expect(mutateMock).toHaveBeenCalledWith('n1');
+    expect(mutateMock).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'n1',
+      link_to: '/group/g1',
+    }));
     expect(navigateMock).toHaveBeenCalledWith('/group/g1');
   });
 
@@ -72,6 +77,8 @@ describe('NotificationsPage', () => {
           content: '你报名的高新牌馆还有30分钟开局，请准时到场。',
           created_at: new Date().toISOString(),
           read: false,
+          read_at: null,
+          clicked_at: null,
           link_to: '/group/g2',
         },
       ],
@@ -82,7 +89,10 @@ describe('NotificationsPage', () => {
     fireEvent.click(screen.getByText('你加入的拼团即将开局'));
 
     expect(screen.getByText('你报名的高新牌馆还有30分钟开局，请准时到场。')).toBeInTheDocument();
-    expect(mutateMock).toHaveBeenCalledWith('n2');
+    expect(mutateMock).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'n2',
+      type: 'group_start_reminder',
+    }));
     expect(navigateMock).toHaveBeenCalledWith('/group/g2');
   });
 });
