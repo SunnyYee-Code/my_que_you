@@ -277,6 +277,66 @@ export type Database = {
           },
         ]
       }
+      favorite_locations: {
+        Row: {
+          address: string
+          city_id: string
+          city_name: string
+          created_at: string
+          id: string
+          last_used_at: string | null
+          latitude: number
+          longitude: number
+          name: string
+          note: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          address: string
+          city_id: string
+          city_name: string
+          created_at?: string
+          id?: string
+          last_used_at?: string | null
+          latitude: number
+          longitude: number
+          name: string
+          note?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          address?: string
+          city_id?: string
+          city_name?: string
+          created_at?: string
+          id?: string
+          last_used_at?: string | null
+          latitude?: number
+          longitude?: number
+          name?: string
+          note?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "favorite_locations_city_id_fkey"
+            columns: ["city_id"]
+            isOneToOne: false
+            referencedRelation: "cities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "favorite_locations_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       group_invitations: {
         Row: {
           created_at: string

@@ -103,6 +103,17 @@ export default function AmapLocationPicker({ onSelect, initialAddress, initialLa
     };
   }, []);
 
+  useEffect(() => {
+    setSearchText(initialAddress || '');
+  }, [initialAddress]);
+
+  useEffect(() => {
+    if (typeof initialLng !== 'number' || typeof initialLat !== 'number') return;
+    if (!window.AMap || !mapInstance.current) return;
+
+    updateMarker(initialLng, initialLat);
+  }, [initialLat, initialLng, updateMarker]);
+
   const handleSearch = () => {
     if (!searchText.trim() || !window.AMap) return;
     const placeSearch = new window.AMap.PlaceSearch({ city: '' });
