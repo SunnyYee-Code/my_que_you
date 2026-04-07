@@ -8,6 +8,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { CityProvider } from "@/contexts/CityContext";
 import RequireAuth from "@/components/auth/RequireAuth";
 import RequireAdmin from "@/components/auth/RequireAdmin";
+import { usePerformanceMonitoring } from "@/hooks/usePerformanceMonitoring";
 import Home from "./pages/Home";
 import Community from "./pages/Index";
 import Login from "./pages/Login";
@@ -29,6 +30,12 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+// Performance monitoring wrapper component
+const PerformanceMonitoringWrapper = ({ children }: { children: React.ReactNode }) => {
+  usePerformanceMonitoring();
+  return <>{children}</>;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -37,8 +44,9 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter>
-            <ActivitySlotConversionTracker />
-            <Routes>
+            <PerformanceMonitoringWrapper>
+              <ActivitySlotConversionTracker />
+              <Routes>
               {/* Public routes */}
               <Route path="/" element={<Home />} />
               <Route path="/community" element={<Community />} />
@@ -60,7 +68,8 @@ const App = () => (
               <Route path="/notifications" element={<RequireAuth><Notifications /></RequireAuth>} />
               <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
               <Route path="*" element={<NotFound />} />
-            </Routes>
+              </Routes>
+            </PerformanceMonitoringWrapper>
           </BrowserRouter>
         </CityProvider>
       </AuthProvider>

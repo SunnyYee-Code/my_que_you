@@ -30,6 +30,7 @@ import {
   buildNotificationDeliveryLogFields,
   buildNotificationReachPlan,
 } from '@/lib/notification-reach'
+import { invalidateBannedWordsCache } from '@/lib/banned-words'
 import {
   Users,
   BarChart3,
@@ -2384,7 +2385,7 @@ function BannedWordsManager() {
       setNewWord('')
       queryClient.invalidateQueries({ queryKey: ['admin-banned-words'] })
       // Invalidate client cache
-      import('@/lib/banned-words').then(m => m.invalidateBannedWordsCache())
+      invalidateBannedWordsCache()
     }
   }
 
@@ -2394,7 +2395,7 @@ function BannedWordsManager() {
     else {
       toast({ title: `已删除：${word}` })
       queryClient.invalidateQueries({ queryKey: ['admin-banned-words'] })
-      import('@/lib/banned-words').then(m => m.invalidateBannedWordsCache())
+      invalidateBannedWordsCache()
     }
   }
 

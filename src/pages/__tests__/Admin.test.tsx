@@ -8,11 +8,13 @@ import AdminPage from '@/pages/Admin'
 const toastMock = vi.fn()
 const navigateMock = vi.fn()
 const invalidateQueriesMock = vi.fn()
-const invalidateBannedWordsCacheMock = vi.fn()
 const supabaseCalls: Array<{ table: string; action: string; payload?: any }> = []
 const supabaseFailures = vi.hoisted(() => ({ byTableAction: {} as Record<string, string> }))
 
 const authState = vi.hoisted(() => ({ user: { id: 'admin-1' }, isSuperAdmin: true }))
+const bannedWordsState = vi.hoisted(() => ({
+  invalidateBannedWordsCache: vi.fn(),
+}))
 const cityState = vi.hoisted(() => ({
   allCities: [
     { id: 'chengdu', name: '成都' },
@@ -240,7 +242,7 @@ vi.mock('@/components/layout/AppLayout', () => ({ default: ({ children }: any) =
 vi.mock('@/components/shared/UserAvatar', () => ({ default: ({ nickname }: any) => <span>{nickname}</span> }))
 vi.mock('@/components/shared/CreditBadge', () => ({ default: ({ score }: any) => <span>信用{score}</span> }))
 vi.mock('@/components/shared/LoadingState', () => ({ default: () => <div>加载中...</div> }))
-vi.mock('@/lib/banned-words', () => ({ invalidateBannedWordsCache: invalidateBannedWordsCacheMock }))
+vi.mock('@/lib/banned-words', () => ({ invalidateBannedWordsCache: bannedWordsState.invalidateBannedWordsCache }))
 vi.mock('@/components/ui/tabs', () => {
   const React = require('react')
   const Ctx = React.createContext({ value: 'users', setValue: (_v: string) => {} })
@@ -306,7 +308,7 @@ describe('AdminPage', () => {
     toastMock.mockReset()
     navigateMock.mockReset()
     invalidateQueriesMock.mockReset()
-    invalidateBannedWordsCacheMock.mockReset()
+    bannedWordsState.invalidateBannedWordsCache.mockReset()
     supabaseCalls.length = 0
     supabaseFailures.byTableAction = {}
   })
@@ -463,7 +465,7 @@ describe('AdminPage', () => {
         supabaseCalls.some(c => c.table === 'banned_words' && c.action === 'insert' && c.payload.word === '新词'),
       ).toBe(true),
     )
-    await waitFor(() => expect(invalidateBannedWordsCacheMock).toHaveBeenCalled())
+    await waitFor(() => expect(bannedWordsState.invalidateBannedWordsCache).toHaveBeenCalled())
     expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: '已添加：新词' }))
   })
 
