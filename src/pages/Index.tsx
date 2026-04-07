@@ -6,12 +6,14 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AppLayout from '@/components/layout/AppLayout';
 import StatusBadge from '@/components/shared/StatusBadge';
 import CreditBadge from '@/components/shared/CreditBadge';
 import UserAvatar from '@/components/shared/UserAvatar';
 import EmptyState from '@/components/shared/EmptyState';
 import LoadingState from '@/components/shared/LoadingState';
+import CircleFeed from '@/components/circle/CircleFeed';
 import { useCity } from '@/contexts/CityContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGroupsByCity, useMyGroups } from '@/hooks/useGroups';
@@ -162,6 +164,19 @@ export default function IndexPage() {
         <div className="md:hidden">
           <CitySearchSelect />
         </div>
+
+        <Tabs defaultValue="groups">
+          <TabsList className="w-full">
+            <TabsTrigger value="groups" className="flex-1">附近拼局</TabsTrigger>
+            <TabsTrigger value="circle" className="flex-1">雀友圈</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="circle" className="mt-4">
+            <CircleFeed />
+          </TabsContent>
+
+          <TabsContent value="groups" className="mt-4">
+        <div className="space-y-4">
 
         {/* Filters row 1: distance + sort + refresh */}
         <div className="flex items-center gap-2 flex-wrap">
@@ -411,6 +426,10 @@ export default function IndexPage() {
         <p className="md:hidden text-center text-xs text-muted-foreground pt-4 pb-2">
           本平台仅供娱乐约局，禁止赌博
         </p>
+        </div>
+          </TabsContent>
+        </Tabs>
+
       </div>
     </AppLayout>
   );
