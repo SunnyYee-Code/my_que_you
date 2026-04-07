@@ -76,6 +76,10 @@ vi.mock('@/hooks/useBlacklist', () => ({
   useAddToBlacklist: () => ({ mutateAsync: addToBlacklistMock, isPending: false }),
   useRemoveFromBlacklist: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
+vi.mock('@/hooks/useCreditBadges', () => ({
+  useUserBadges: () => ({ data: [], isLoading: false, error: null }),
+}));
+vi.mock('@/components/shared/UserBadges', () => ({ default: () => null }));
 
 function renderPage() {
   return render(

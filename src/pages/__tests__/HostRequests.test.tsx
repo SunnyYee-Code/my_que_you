@@ -30,6 +30,10 @@ vi.mock('@/components/shared/EmptyState', () => ({ default: ({ title }: any) => 
 vi.mock('@/components/shared/LoadingState', () => ({ default: () => <div>loading</div> }));
 vi.mock('@/components/ui/card', () => ({ Card: ({ children }: any) => <div>{children}</div>, CardContent: ({ children }: any) => <div>{children}</div> }));
 vi.mock('@/components/ui/button', () => ({ Button: ({ children, ...props }: any) => <button {...props}>{children}</button> }));
+vi.mock('@/hooks/useCreditBadges', () => ({
+  useMultiUserBadges: () => ({ data: {}, isLoading: false }),
+}));
+vi.mock('@/components/shared/UserBadges', () => ({ default: () => null }));
 
 function renderPage() {
   return render(<MemoryRouter><HostRequestsPage /></MemoryRouter>);

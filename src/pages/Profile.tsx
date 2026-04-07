@@ -10,6 +10,8 @@ import LoadingState from '@/components/shared/LoadingState';
 import ReportDialog from '@/components/shared/ReportDialog';
 import { useProfileById, useReviewsByTarget, useGroupsByMember, useCreditHistory, useFulfillmentProfiles } from '@/hooks/useProfile';
 import { useAuth } from '@/contexts/AuthContext';
+import { useUserBadges } from '@/hooks/useCreditBadges';
+import UserBadges from '@/components/shared/UserBadges';
 import { Settings, Edit, Star, Flag, TrendingUp, TrendingDown, History, ShieldCheck, ShieldAlert, AlertTriangle, Award, CheckCircle, Copy } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -28,6 +30,7 @@ export default function ProfilePage() {
   const { data: creditHistory = [] } = useCreditHistory(isSelf ? id : undefined);
   const { data: fulfillmentProfiles = {} } = useFulfillmentProfiles(profile?.id ? [profile.id] : []);
   const { data: blacklistState } = useBlacklistStatus(id);
+  const { data: creditBadges = [] } = useUserBadges(profile?.id, profile?.credit_score);
   const addToBlacklist = useAddToBlacklist();
   const removeFromBlacklist = useRemoveFromBlacklist();
 
@@ -186,6 +189,15 @@ export default function ProfilePage() {
                 ))}
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            <h2 className="font-semibold flex items-center gap-2">
+              <Award className="h-4 w-4 text-[hsl(var(--gold))]" /> 荣誉勋章
+            </h2>
+            <UserBadges badges={creditBadges} variant="full" />
           </CardContent>
         </Card>
 

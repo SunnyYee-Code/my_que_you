@@ -9,6 +9,8 @@ import LoadingState from '@/components/shared/LoadingState';
 import { useAuth } from '@/contexts/AuthContext';
 import { useJoinRequests, useUpdateRequestStatus } from '@/hooks/useGroups';
 import { useFulfillmentProfiles } from '@/hooks/useProfile';
+import { useMultiUserBadges } from '@/hooks/useCreditBadges';
+import UserBadges from '@/components/shared/UserBadges';
 import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, Check, X } from 'lucide-react';
 
@@ -19,6 +21,10 @@ export default function HostRequestsPage() {
   const { data: apps = [], isLoading } = useJoinRequests();
   const applicantIds = apps.map(app => app.user_id);
   const { data: fulfillmentProfiles = {} } = useFulfillmentProfiles(applicantIds);
+  const { data: applicantBadgesData } = useMultiUserBadges(
+    apps.map(app => ({ userId: app.user_id, creditScore: app.user?.credit_score ?? 100 }))
+  );
+  const applicantBadges = applicantBadgesData ?? {};
   const updateStatus = useUpdateRequestStatus();
 
   if (!user) { navigate('/login'); return null; }
@@ -67,6 +73,7 @@ export default function HostRequestsPage() {
                         <div>
                           <p className="font-medium text-sm">{appUser.nickname}</p>
                           <CreditBadge score={appUser.credit_score} />
+                          <UserBadges badges={applicantBadges[app.user_id] ?? []} variant="compact" maxDisplay={3} className="mt-1" />
                         </div>
                       </div>
                       {app.status === 'PENDING' ? (

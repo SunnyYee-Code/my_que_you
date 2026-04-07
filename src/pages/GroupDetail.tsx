@@ -10,6 +10,8 @@ import LoadingState from '@/components/shared/LoadingState';
 import RealNameRestrictionGuard from '@/components/shared/RealNameRestrictionGuard';
 import ReportDialog from '@/components/shared/ReportDialog';
 import { useGroupDetail } from '@/hooks/useGroups';
+import { useMultiUserBadges } from '@/hooks/useCreditBadges';
+import UserBadges from '@/components/shared/UserBadges';
 import { useRealNameVerification } from '@/hooks/useRealNameVerification';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -115,6 +117,16 @@ export default function GroupDetailPage() {
   });
   const leavePoints = leaveDeduction ?? 3;
   const kickPoints = kickDeduction ?? 5;
+
+  // 勋章数据 - 从 group 中提前提取成员信息（group 可能为 undefined）
+  const groupMemberUsers = (group?.members ?? []).map(m => ({
+    userId: m.user_id,
+    creditScore: m.profiles?.credit_score ?? 100,
+  }));
+  const hostUser = group?.host ? [{ userId: group.host.id, creditScore: group.host.credit_score ?? 100 }] : [];
+  const badgeUsers = [...hostUser, ...groupMemberUsers.filter(u => u.userId !== group?.host_id)];
+  const { data: memberBadgesData } = useMultiUserBadges(badgeUsers);
+  const memberBadges = memberBadgesData ?? {};
 
   if (isLoading) return <AppLayout><LoadingState /></AppLayout>;
   if (!group) return <AppLayout><div className="text-center py-20">拼团不存在</div></AppLayout>;
@@ -523,6 +535,7 @@ export default function GroupDetailPage() {
                     <span className="text-sm text-muted-foreground">房主</span>
                   </div>
                   <CreditBadge score={host.credit_score} className="mt-1" />
+                  <UserBadges badges={memberBadges[host.id] ?? []} variant="compact" maxDisplay={3} className="mt-1" />
                 </div>
                 <div className="flex items-center gap-1 text-sm text-muted-foreground shrink-0">
                   查看主页 <ChevronRight className="h-4 w-4" />
@@ -636,7 +649,10 @@ export default function GroupDetailPage() {
                       </Link>
                       {isThisHost && <Crown className="h-3.5 w-3.5 text-[hsl(var(--gold))] shrink-0" />}
                     </div>
-                    <CreditBadge score={m.profiles.credit_score} />
+                    <div className="flex flex-col items-end gap-0.5">
+                      <CreditBadge score={m.profiles.credit_score} />
+                      <UserBadges badges={memberBadges[m.user_id] ?? []} variant="compact" maxDisplay={2} />
+                    </div>
                     {m.user_id !== user?.id && (
                       <div className="flex items-center gap-0.5">
                         {isHost && !isThisHost && (group.status === 'OPEN' || group.status === 'FULL') && (
