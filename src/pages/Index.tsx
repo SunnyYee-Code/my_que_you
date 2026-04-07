@@ -165,11 +165,15 @@ export default function IndexPage() {
           <CitySearchSelect />
         </div>
 
-        <Tabs defaultValue="groups" onValueChange={(v) => { if (v === 'clubs') navigate('/clubs'); }}>
+        <Tabs defaultValue="groups" onValueChange={(v) => {
+          if (v === 'clubs') navigate('/clubs');
+          if (v === 'recurring') navigate('/recurring-games');
+        }}>
           <TabsList className="w-full">
             <TabsTrigger value="groups" className="flex-1">附近拼局</TabsTrigger>
             <TabsTrigger value="circle" className="flex-1">雀友圈</TabsTrigger>
             <TabsTrigger value="clubs" className="flex-1">俱乐部</TabsTrigger>
+            <TabsTrigger value="recurring" className="flex-1">长期局</TabsTrigger>
           </TabsList>
 
           <TabsContent value="circle" className="mt-4">
