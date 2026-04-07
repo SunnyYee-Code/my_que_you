@@ -10,6 +10,7 @@ import UserDropdown from './UserDropdown';
 
 const navLinks = [
   { to: '/community', label: '拼团社区' },
+  { to: '/clubs', label: '俱乐部' },
   { to: '/my-groups', label: '我的拼团' },
   { to: '/friends', label: '好友' },
   { to: '/host/requests', label: '审核管理' },

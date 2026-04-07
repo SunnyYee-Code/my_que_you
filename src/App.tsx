@@ -23,6 +23,7 @@ import MyGroups from "./pages/MyGroups";
 import Chat from "./pages/Chat";
 import DirectChat from "./pages/DirectChat";
 import Friends from "./pages/Friends";
+import Clubs from "./pages/Clubs";
 import Review from "./pages/Review";
 import Notifications from "./pages/Notifications";
 import Admin from "./pages/Admin";
@@ -62,6 +63,7 @@ const App = () => (
               <Route path="/group/:id/chat" element={<RequireAuth><Chat /></RequireAuth>} />
               <Route path="/group/:id/review" element={<RequireAuth><Review /></RequireAuth>} />
               <Route path="/friends" element={<RequireAuth><Friends /></RequireAuth>} />
+              <Route path="/clubs" element={<RequireAuth><Clubs /></RequireAuth>} />
               <Route path="/dm/:friendId" element={<RequireAuth><DirectChat /></RequireAuth>} />
               <Route path="/host/requests" element={<RequireAuth><HostRequests /></RequireAuth>} />
               <Route path="/my-groups" element={<RequireAuth><MyGroups /></RequireAuth>} />
