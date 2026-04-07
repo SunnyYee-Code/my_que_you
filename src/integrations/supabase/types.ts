@@ -1386,6 +1386,45 @@ export type Database = {
         }
         Relationships: []
       }
+      partner_tags: {
+        Row: {
+          id: string
+          user_id: string
+          partner_id: string
+          tag: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          partner_id: string
+          tag: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          partner_id?: string
+          tag?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partner_tags_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_tags_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

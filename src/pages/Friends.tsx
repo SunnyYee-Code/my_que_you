@@ -20,6 +20,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useFriendshipStatus } from '@/hooks/useFriends';
 import { useBlacklistStatus } from '@/hooks/useBlacklist';
 import { UserCheck, Clock as ClockIcon } from 'lucide-react';
+import FrequentPartnersSection from '@/components/friends/FrequentPartnersSection';
 
 function SearchResultCard({ searchResult, user, showAddDialog, setShowAddDialog, addMessage, setAddMessage, handleSendRequest, sendRequest, navigate }: any) {
   const { data: friendship, isLoading: statusLoading } = useFriendshipStatus(searchResult?.id);
@@ -179,6 +180,9 @@ export default function FriendsPage() {
               好友列表
               {friends.length > 0 && <Badge variant="secondary" className="ml-1.5 h-5 min-w-5 px-1 text-xs">{friends.length}</Badge>}
             </TabsTrigger>
+            <TabsTrigger value="partners" className="flex-1">
+              常约牌友
+            </TabsTrigger>
             <TabsTrigger value="requests" className="flex-1">
               好友请求
               {requests.length > 0 && <Badge className="ml-1.5 h-5 min-w-5 px-1 text-xs bg-destructive text-destructive-foreground">{requests.length}</Badge>}
@@ -228,6 +232,10 @@ export default function FriendsPage() {
                 </Card>
               ))
             )}
+          </TabsContent>
+
+          <TabsContent value="partners" className="mt-4">
+            <FrequentPartnersSection />
           </TabsContent>
 
           <TabsContent value="requests" className="mt-4 space-y-2">
