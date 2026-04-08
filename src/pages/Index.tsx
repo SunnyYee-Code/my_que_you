@@ -14,6 +14,7 @@ import UserAvatar from '@/components/shared/UserAvatar';
 import EmptyState from '@/components/shared/EmptyState';
 import LoadingState from '@/components/shared/LoadingState';
 import CircleFeed from '@/components/circle/CircleFeed';
+import Leaderboard from '@/components/leaderboard/Leaderboard';
 import { useCity } from '@/contexts/CityContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGroupsByCity, useMyGroups } from '@/hooks/useGroups';
@@ -172,12 +173,17 @@ export default function IndexPage() {
           <TabsList className="w-full">
             <TabsTrigger value="groups" className="flex-1">附近拼局</TabsTrigger>
             <TabsTrigger value="circle" className="flex-1">雀友圈</TabsTrigger>
+            <TabsTrigger value="leaderboard" className="flex-1">活跃榜</TabsTrigger>
             <TabsTrigger value="clubs" className="flex-1">俱乐部</TabsTrigger>
             <TabsTrigger value="recurring" className="flex-1">长期局</TabsTrigger>
           </TabsList>
 
           <TabsContent value="circle" className="mt-4">
             <CircleFeed />
+          </TabsContent>
+
+          <TabsContent value="leaderboard" className="mt-4">
+            <Leaderboard />
           </TabsContent>
 
           <TabsContent value="groups" className="mt-4">

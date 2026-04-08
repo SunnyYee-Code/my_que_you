@@ -13,11 +13,12 @@ import { FulfillmentRecords } from '@/components/attendance/FulfillmentRecords';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserBadges } from '@/hooks/useCreditBadges';
 import UserBadges from '@/components/shared/UserBadges';
-import { Settings, Edit, Star, Flag, TrendingUp, TrendingDown, History, ShieldCheck, ShieldAlert, AlertTriangle, Award, CheckCircle, Copy } from 'lucide-react';
+import { Settings, Edit, Star, Flag, TrendingUp, TrendingDown, History, ShieldCheck, ShieldAlert, AlertTriangle, Award, CheckCircle, Copy, Trophy } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useAddToBlacklist, useBlacklistStatus, useRemoveFromBlacklist } from '@/hooks/useBlacklist';
+import { useUserLeaderboardRank } from '@/hooks/useLeaderboard';
 
 export default function ProfilePage() {
   const { id } = useParams<{ id: string }>();
@@ -34,6 +35,7 @@ export default function ProfilePage() {
   const { data: creditBadges = [] } = useUserBadges(profile?.id, profile?.credit_score);
   const addToBlacklist = useAddToBlacklist();
   const removeFromBlacklist = useRemoveFromBlacklist();
+  const leaderboardRank = useUserLeaderboardRank(profile?.id);
 
   if (profileLoading) return <AppLayout><LoadingState /></AppLayout>;
   if (!profile) return <AppLayout><div className="text-center py-20">用户不存在</div></AppLayout>;
@@ -241,6 +243,31 @@ export default function ProfilePage() {
               <p className="text-xs text-[hsl(var(--warning))]">
                 待关注：{fulfillmentProfile.topRiskTags.join('、')}
               </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Leaderboard rank */}
+        <Card>
+          <CardContent className="p-4">
+            <h2 className="font-semibold flex items-center gap-2 mb-3">
+              <Trophy className="h-4 w-4 text-[hsl(var(--gold))]" /> 活跃榜排名
+            </h2>
+            {leaderboardRank.isLoading ? (
+              <p className="text-sm text-muted-foreground">加载中...</p>
+            ) : leaderboardRank.rank ? (
+              <div className="flex items-center gap-4">
+                <div className="text-center">
+                  <div className="text-2xl font-black text-primary">#{leaderboardRank.rank}</div>
+                  <div className="text-xs text-muted-foreground">月榜排名</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-black text-primary">{leaderboardRank.participationCount}</div>
+                  <div className="text-xs text-muted-foreground">本月参与局数</div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">本月暂未上榜，快去参与拼局吧</p>
             )}
           </CardContent>
         </Card>

@@ -21,7 +21,8 @@ import { buildRealNameViewModel, getRealNameStatusActions, REAL_NAME_COPY } from
 import { supabase } from '@/integrations/supabase/client';
 import { useBindInviteCode, useInviteCodeSnapshot } from '@/hooks/useInviteCode';
 import { createDefaultInviteCodeSnapshot, validateInviteCode } from '@/lib/invite-code';
-import { ArrowLeft, AlertTriangle, Shield, Camera, User, Phone, Calendar, Lock } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Shield, Camera, User, Phone, Calendar, Lock, Trophy } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import { format } from 'date-fns';
 
 export default function SettingsPage() {
@@ -51,6 +52,10 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
   const [inviteCodeInput, setInviteCodeInput] = useState('');
+  const [showInLeaderboard, setShowInLeaderboard] = useState(() => {
+    const stored = localStorage.getItem('show_in_leaderboard');
+    return stored === null ? true : stored === 'true';
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (authLoading || isLoading || deletionStatusLoading || realNameLoading || inviteCodeLoading) return <AppLayout><LoadingState /></AppLayout>;
@@ -309,6 +314,12 @@ export default function SettingsPage() {
     }
   };
 
+  const handleLeaderboardToggle = (checked: boolean) => {
+    setShowInLeaderboard(checked);
+    localStorage.setItem('show_in_leaderboard', String(checked));
+    toast({ title: checked ? '已显示在榜单' : '已隐藏榜单排名', description: checked ? '你的活跃度将出现在榜单中' : '你将不会出现在活跃度榜单中' });
+  };
+
   const handleLogout = async () => {
     await signOut();
     navigate('/login');
@@ -423,6 +434,24 @@ export default function SettingsPage() {
                 <Calendar className="h-3.5 w-3.5" /> 注册时间
               </div>
               <span className="text-sm">{format(new Date(profile.created_at), 'yyyy-MM-dd')}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Leaderboard privacy */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Trophy className="h-4 w-4 text-[hsl(var(--gold))]" /> 活跃榜隐私
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">显示在活跃度榜单</p>
+                <p className="text-xs text-muted-foreground">关闭后你将不会出现在社区活跃榜中</p>
+              </div>
+              <Switch checked={showInLeaderboard} onCheckedChange={handleLeaderboardToggle} />
             </div>
           </CardContent>
         </Card>
