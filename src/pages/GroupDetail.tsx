@@ -15,7 +15,7 @@ import UserBadges from '@/components/shared/UserBadges';
 import { useRealNameVerification } from '@/hooks/useRealNameVerification';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { ArrowLeft, MapPin, Clock, Users, Navigation, MessageCircle, AlertTriangle, Crown, ChevronRight, HelpCircle, UserMinus, Share2, Copy, Download, Info, Pencil } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock, Users, Navigation, MessageCircle, AlertTriangle, Crown, ChevronRight, HelpCircle, UserMinus, Share2, Copy, Download, Info, Pencil, Calculator } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
@@ -840,6 +840,9 @@ export default function GroupDetailPage() {
             <>
               <Button variant="outline" className="w-full gap-2" onClick={() => navigate(`/group/${group.id}/chat`)}>
                 <MessageCircle className="h-4 w-4" /> 进入聊天室
+              </Button>
+              <Button variant="outline" className="w-full gap-2" onClick={() => navigate(`/tools/scorer?groupId=${group.id}`)}>
+                <Calculator className="h-4 w-4" /> 记分器
               </Button>
               {group.status === 'OPEN' && (
                 <InviteFriendsDialog

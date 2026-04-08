@@ -27,6 +27,7 @@ import Clubs from "./pages/Clubs";
 import RecurringGames from "./pages/RecurringGames";
 import Review from "./pages/Review";
 import Notifications from "./pages/Notifications";
+import Scorer from "./pages/Scorer";
 import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 
@@ -61,6 +62,7 @@ const App = () => (
               <Route path="/community" element={<Community />} />
               <Route path="/login" element={<Login />} />
               <Route path="/onboarding" element={<Onboarding />} />
+              <Route path="/tools/scorer" element={<Scorer />} />
 
               {/* Protected routes */}
               <Route path="/profile/:id" element={<RequireAuth><Profile /></RequireAuth>} />
