@@ -7,16 +7,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import UserAvatar from '@/components/shared/UserAvatar';
 import LoadingState from '@/components/shared/LoadingState';
 import LocationMessageCard from '@/components/chat/LocationMessageCard';
+import VenueHintBanner from '@/components/chat/VenueHintBanner';
+import QuickMessagePanel from '@/components/chat/QuickMessagePanel';
 import AmapLocationPicker from '@/components/map/AmapLocationPicker';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGroupDetail } from '@/hooks/useGroups';
 import { useMessages, useSendMessage, useSendLocationMessage } from '@/hooks/useMessages';
-import { ArrowLeft, Send, Users, Mic, MapPin } from 'lucide-react';
+import { ArrowLeft, Send, Users, Mic, MapPin, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { validateNoBannedWords } from '@/lib/banned-words';
 import { useToast } from '@/hooks/use-toast';
 import { parseLocationMeta } from '@/lib/location-message';
+import { parseVenueHint, getQuickMessages } from '@/lib/arrival-assist';
 
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>();
@@ -34,6 +37,9 @@ export default function ChatPage() {
   const [locationDialogOpen, setLocationDialogOpen] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState<{ address: string; lat: number; lng: number } | null>(null);
 
+  // 快捷协同面板状态
+  const [quickPanelOpen, setQuickPanelOpen] = useState(false);
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -42,6 +48,9 @@ export default function ChatPage() {
   if (!group) return <div className="p-4">聊天室不存在</div>;
 
   const members = group.members || [];
+  const isHost = group.host_id === user?.id;
+  const venueHint = parseVenueHint((group as any).venue_hint);
+  const quickMessages = getQuickMessages(isHost);
 
   const send = async () => {
     if (!input.trim() || !id) return;
@@ -100,6 +109,9 @@ export default function ChatPage() {
         </Sheet>
       </div>
 
+      {/* 场地到场提示横幅 */}
+      {venueHint && <VenueHintBanner hint={venueHint} />}
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
         {messages.map(msg => {
@@ -134,11 +146,28 @@ export default function ChatPage() {
         <div ref={endRef} />
       </div>
 
+      {/* 快捷协同消息面板 */}
+      {quickPanelOpen && (
+        <QuickMessagePanel
+          messages={quickMessages}
+          onSelect={content => { setInput(content); setQuickPanelOpen(false); }}
+        />
+      )}
+
       {/* Input */}
       <div className="border-t bg-card p-3">
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" className="shrink-0 text-muted-foreground" disabled>
             <Mic className="h-5 w-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn('shrink-0', quickPanelOpen ? 'text-primary' : 'text-muted-foreground')}
+            onClick={() => setQuickPanelOpen(v => !v)}
+            title="快捷协同"
+          >
+            <Zap className="h-5 w-5" />
           </Button>
           <Button
             variant="ghost"

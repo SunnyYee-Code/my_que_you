@@ -498,6 +498,7 @@ export type Database = {
           status: Database["public"]["Enums"]["group_status"]
           total_slots: number
           updated_at: string
+          venue_hint: Json | null
         }
         Insert: {
           address: string
@@ -516,6 +517,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["group_status"]
           total_slots: number
           updated_at?: string
+          venue_hint?: Json | null
         }
         Update: {
           address?: string
@@ -534,6 +536,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["group_status"]
           total_slots?: number
           updated_at?: string
+          venue_hint?: Json | null
         }
         Relationships: [
           {

@@ -15,12 +15,15 @@ import UserBadges from '@/components/shared/UserBadges';
 import { useRealNameVerification } from '@/hooks/useRealNameVerification';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { ArrowLeft, MapPin, Clock, Users, Navigation, MessageCircle, AlertTriangle, Crown, ChevronRight, HelpCircle, UserMinus, Share2, Copy, Download } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock, Users, Navigation, MessageCircle, AlertTriangle, Crown, ChevronRight, HelpCircle, UserMinus, Share2, Copy, Download, Info, Pencil } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
+import VenueHintBanner from '@/components/chat/VenueHintBanner';
+import { useUpdateVenueHint } from '@/hooks/useArrivalAssist';
+import { parseVenueHint, hasVenueHint, validateVenueHint, VenueHint, VENUE_HINT_MAX } from '@/lib/arrival-assist';
 import { Badge } from '@/components/ui/badge';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
@@ -77,6 +80,8 @@ export default function GroupDetailPage() {
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
   const [leaveReason, setLeaveReason] = useState('');
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [venueHintDialogOpen, setVenueHintDialogOpen] = useState(false);
+  const [venueHintDraft, setVenueHintDraft] = useState<VenueHint>({});
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -84,6 +89,8 @@ export default function GroupDetailPage() {
   const queryClient = useQueryClient();
   const { data: group, isLoading } = useGroupDetail(id);
   const { data: realNameSnapshot, isLoading: realNameLoading, isError: realNameError } = useRealNameVerification();
+
+  const updateVenueHint = useUpdateVenueHint(id);
 
   const { data: myApp } = useQuery({
     queryKey: ['my-application', id, user?.id],
@@ -501,6 +508,25 @@ export default function GroupDetailPage() {
     }
   };
 
+  const venueHint = parseVenueHint((group as any).venue_hint);
+
+  const handleOpenVenueHintDialog = () => {
+    setVenueHintDraft(venueHint ?? {});
+    setVenueHintDialogOpen(true);
+  };
+
+  const handleSaveVenueHint = async () => {
+    const err = validateVenueHint(venueHintDraft);
+    if (err) { toast({ title: err.message, variant: 'destructive' }); return; }
+    try {
+      await updateVenueHint.mutateAsync(hasVenueHint(venueHintDraft) ? venueHintDraft : null);
+      toast({ title: '到场说明已保存' });
+      setVenueHintDialogOpen(false);
+    } catch {
+      toast({ title: '保存失败，请重试', variant: 'destructive' });
+    }
+  };
+
   const handleNavigate = () => {
     if (group.latitude && group.longitude) {
       window.open(`https://uri.amap.com/marker?position=${group.longitude},${group.latitude}&name=${encodeURIComponent(group.address)}`, '_blank');
@@ -630,6 +656,76 @@ export default function GroupDetailPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* 到场辅助说明 */}
+        {(hasVenueHint(venueHint) || isHost) && (
+          <Card>
+            <CardContent className="p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-sm font-medium">
+                  <Info className="h-4 w-4 text-amber-500" />
+                  <span>到场说明</span>
+                </div>
+                {isHost && (
+                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-muted-foreground" onClick={handleOpenVenueHintDialog}>
+                    <Pencil className="h-3 w-3" />
+                    {hasVenueHint(venueHint) ? '编辑' : '添加'}
+                  </Button>
+                )}
+              </div>
+              {venueHint ? (
+                <VenueHintBanner hint={venueHint} className="mx-0 my-0" />
+              ) : (
+                <p className="text-xs text-muted-foreground">尚未添加到场说明，如需补充入口、楼层或联系方式，点击「添加」。</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* 编辑到场说明弹窗 */}
+        <Dialog open={venueHintDialogOpen} onOpenChange={setVenueHintDialogOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Info className="h-4 w-4 text-amber-500" />
+                到场补充说明
+              </DialogTitle>
+              <DialogDescription>填写后成员可在聊天室和拼团详情查看，帮助大家更快找到位置。</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              {([
+                { key: 'entrance', label: '入口说明', placeholder: '如：南门进，左侧电梯' },
+                { key: 'floor', label: '楼层', placeholder: '如：3楼 301 室' },
+                { key: 'contact', label: '联系方式', placeholder: '如：到了联系微信 xxx' },
+                { key: 'notes', label: '其他备注', placeholder: '如：停车场在地下一层' },
+              ] as { key: keyof VenueHint; label: string; placeholder: string }[]).map(({ key, label, placeholder }) => (
+                <div key={key} className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">{label}</label>
+                  <div className="relative">
+                    <input
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      placeholder={placeholder}
+                      value={venueHintDraft[key] ?? ''}
+                      maxLength={VENUE_HINT_MAX}
+                      onChange={e => setVenueHintDraft(prev => ({ ...prev, [key]: e.target.value }))}
+                    />
+                    {(venueHintDraft[key]?.length ?? 0) > VENUE_HINT_MAX - 10 && (
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
+                        {venueHintDraft[key]?.length ?? 0}/{VENUE_HINT_MAX}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setVenueHintDialogOpen(false)}>取消</Button>
+              <Button onClick={handleSaveVenueHint} disabled={updateVenueHint.isPending}>
+                {updateVenueHint.isPending ? '保存中...' : '保存'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Members list */}
         <Card>
