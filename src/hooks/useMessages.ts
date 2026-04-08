@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffect } from 'react';
+import { createLocationMeta, buildLocationContent } from '@/lib/location-message';
 
 export function useMessages(groupId: string | undefined) {
   const queryClient = useQueryClient();
@@ -58,6 +59,41 @@ export function useSendMessage() {
           sender_id: user.id,
           content,
           type: 'TEXT',
+        });
+      if (error) throw error;
+    },
+    onSuccess: (_, { groupId }) => {
+      queryClient.invalidateQueries({ queryKey: ['messages', groupId] });
+    },
+  });
+}
+
+export function useSendLocationMessage() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: async ({
+      groupId,
+      address,
+      lat,
+      lng,
+    }: {
+      groupId: string;
+      address: string;
+      lat: number;
+      lng: number;
+    }) => {
+      if (!user) throw new Error('请先登录');
+      const meta = createLocationMeta(address, lat, lng);
+      const { error } = await supabase
+        .from('messages')
+        .insert({
+          group_id: groupId,
+          sender_id: user.id,
+          content: buildLocationContent(address),
+          type: 'LOCATION',
+          metadata: meta as any,
         });
       if (error) throw error;
     },

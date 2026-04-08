@@ -3,16 +3,20 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import UserAvatar from '@/components/shared/UserAvatar';
 import LoadingState from '@/components/shared/LoadingState';
+import LocationMessageCard from '@/components/chat/LocationMessageCard';
+import AmapLocationPicker from '@/components/map/AmapLocationPicker';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGroupDetail } from '@/hooks/useGroups';
-import { useMessages, useSendMessage } from '@/hooks/useMessages';
+import { useMessages, useSendMessage, useSendLocationMessage } from '@/hooks/useMessages';
 import { ArrowLeft, Send, Users, Mic, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { validateNoBannedWords } from '@/lib/banned-words';
 import { useToast } from '@/hooks/use-toast';
+import { parseLocationMeta } from '@/lib/location-message';
 
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>();
@@ -21,9 +25,14 @@ export default function ChatPage() {
   const { data: group, isLoading: groupLoading } = useGroupDetail(id);
   const { data: messages = [], isLoading: msgLoading } = useMessages(id);
   const sendMessage = useSendMessage();
+  const sendLocationMessage = useSendLocationMessage();
   const { toast } = useToast();
   const [input, setInput] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
+
+  // 位置选择弹窗状态
+  const [locationDialogOpen, setLocationDialogOpen] = useState(false);
+  const [selectedLocation, setSelectedLocation] = useState<{ address: string; lat: number; lng: number } | null>(null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -43,6 +52,22 @@ export default function ChatPage() {
     }
     await sendMessage.mutateAsync({ groupId: id, content: input.trim() });
     setInput('');
+  };
+
+  const sendLocation = async () => {
+    if (!selectedLocation || !id) return;
+    try {
+      await sendLocationMessage.mutateAsync({
+        groupId: id,
+        address: selectedLocation.address,
+        lat: selectedLocation.lat,
+        lng: selectedLocation.lng,
+      });
+      setLocationDialogOpen(false);
+      setSelectedLocation(null);
+    } catch {
+      toast({ title: '位置发送失败，请重试', variant: 'destructive' });
+    }
   };
 
   return (
@@ -80,17 +105,25 @@ export default function ChatPage() {
         {messages.map(msg => {
           const isSelf = msg.sender_id === user?.id;
           const sender = msg.sender;
+          const locationMeta = msg.type === 'LOCATION' ? parseLocationMeta(msg.metadata) : null;
+
           return (
             <div key={msg.id} className={cn('flex gap-2', isSelf && 'flex-row-reverse')}>
               {!isSelf && sender && <UserAvatar nickname={sender.nickname || ''} size="sm" />}
               <div className={cn('max-w-[70%]')}>
                 {!isSelf && sender && <p className="text-xs text-muted-foreground mb-1">{sender.nickname}</p>}
-                <div className={cn(
-                  'px-3 py-2 rounded-2xl text-sm',
-                  isSelf ? 'bg-primary text-primary-foreground rounded-tr-sm' : 'bg-muted rounded-tl-sm'
-                )}>
-                  {msg.content}
-                </div>
+
+                {locationMeta ? (
+                  <LocationMessageCard meta={locationMeta} isSelf={isSelf} />
+                ) : (
+                  <div className={cn(
+                    'px-3 py-2 rounded-2xl text-sm',
+                    isSelf ? 'bg-primary text-primary-foreground rounded-tr-sm' : 'bg-muted rounded-tl-sm'
+                  )}>
+                    {msg.content}
+                  </div>
+                )}
+
                 <p className={cn('text-[10px] text-muted-foreground mt-1', isSelf && 'text-right')}>
                   {format(new Date(msg.created_at), 'HH:mm')}
                 </p>
@@ -107,7 +140,13 @@ export default function ChatPage() {
           <Button variant="ghost" size="icon" className="shrink-0 text-muted-foreground" disabled>
             <Mic className="h-5 w-5" />
           </Button>
-          <Button variant="ghost" size="icon" className="shrink-0 text-muted-foreground" disabled>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 text-muted-foreground"
+            onClick={() => setLocationDialogOpen(true)}
+            title="发送位置"
+          >
             <MapPin className="h-5 w-5" />
           </Button>
           <Input
@@ -122,6 +161,42 @@ export default function ChatPage() {
           </Button>
         </div>
       </div>
+
+      {/* 位置选择弹窗 */}
+      <Dialog open={locationDialogOpen} onOpenChange={open => { setLocationDialogOpen(open); if (!open) setSelectedLocation(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MapPin className="h-4 w-4" />
+              发送位置
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">选择当前位置或集合点，位置将在 24 小时后自动过期。</p>
+            <AmapLocationPicker
+              onSelect={loc => setSelectedLocation(loc)}
+            />
+            {selectedLocation && (
+              <p className="text-xs text-foreground/70 bg-muted rounded-md px-3 py-2 line-clamp-2">
+                📍 {selectedLocation.address}
+              </p>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setLocationDialogOpen(false); setSelectedLocation(null); }}>
+              取消
+            </Button>
+            <Button
+              onClick={sendLocation}
+              disabled={!selectedLocation || sendLocationMessage.isPending}
+            >
+              {sendLocationMessage.isPending ? '发送中...' : '发送位置'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
