@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -57,6 +57,8 @@ type FavoriteLocationDraft = {
 
 export default function GroupCreatePage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const clubIdFromQuery = searchParams.get('club_id') ?? undefined;
   const { currentCity } = useCity();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -376,6 +378,7 @@ export default function GroupCreatePage() {
         needed_slots: parseInt(neededSlots),
         play_style: finalPlayStyle,
         game_note: gameNote || undefined,
+        club_id: clubIdFromQuery,
       });
       // Record the creation
       await supabase.functions.invoke('check-group-limits', {

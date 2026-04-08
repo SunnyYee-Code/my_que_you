@@ -5,10 +5,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import UserAvatar from '@/components/shared/UserAvatar';
 import LoadingState from '@/components/shared/LoadingState';
 import { useFriends } from '@/hooks/useFriends';
+import { useFrequentPartners } from '@/hooks/useCoParticipation';
 import { useSendGroupInviteCard } from '@/hooks/useDirectMessages';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { UserPlus } from 'lucide-react';
+import { UserPlus, Flame } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface Props {
@@ -31,15 +32,26 @@ export default function InviteFriendsDialog({
   isHost,
 }: Props) {
   const { user, profile } = useAuth();
-  const { data: friends = [], isLoading } = useFriends();
+  const { data: friends = [], isLoading: friendsLoading } = useFriends();
+  const { data: frequentPartners = [], isLoading: partnersLoading } = useFrequentPartners();
   const sendCard = useSendGroupInviteCard();
   const { toast } = useToast();
   const [selected, setSelected] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
   const [sending, setSending] = useState(false);
 
+  const isLoading = friendsLoading || partnersLoading;
+
   // Filter out friends already in the group
   const availableFriends = friends.filter((f: any) => !existingMemberIds.includes(f.profile.id));
+
+  // Frequent partners who are also friends and not already in the group
+  const friendIds = new Set(availableFriends.map((f: any) => f.profile.id));
+  const frequentAvailable = frequentPartners.filter(
+    (p) => friendIds.has(p.userId)
+  );
+  const frequentIds = new Set(frequentAvailable.map((p) => p.userId));
+  const otherFriends = availableFriends.filter((f: any) => !frequentIds.has(f.profile.id));
 
   const toggleSelect = (id: string) => {
     setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -108,7 +120,34 @@ export default function InviteFriendsDialog({
           <p className="text-sm text-muted-foreground text-center py-8">没有可邀请的好友</p>
         ) : (
           <div className="space-y-1">
-            {availableFriends.map((f: any) => (
+            {frequentAvailable.length > 0 && (
+              <>
+                <div className="flex items-center gap-1.5 px-1 pt-1 pb-0.5">
+                  <Flame className="h-3.5 w-3.5 text-orange-500" />
+                  <span className="text-xs font-medium text-orange-500">常约牌友</span>
+                </div>
+                {frequentAvailable.map((p) => (
+                  <label
+                    key={p.userId}
+                    className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/50 cursor-pointer"
+                  >
+                    <Checkbox
+                      checked={selected.includes(p.userId)}
+                      onCheckedChange={() => toggleSelect(p.userId)}
+                    />
+                    <UserAvatar nickname={p.nickname} avatar={p.avatarUrl || undefined} size="sm" />
+                    <span className="text-sm font-medium flex-1 truncate">{p.nickname}</span>
+                    <span className="text-xs text-muted-foreground shrink-0">共局 {p.coCount} 次</span>
+                  </label>
+                ))}
+                {otherFriends.length > 0 && (
+                  <div className="px-1 pt-2 pb-0.5">
+                    <span className="text-xs text-muted-foreground">其他好友</span>
+                  </div>
+                )}
+              </>
+            )}
+            {otherFriends.map((f: any) => (
               <label
                 key={f.profile.id}
                 className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/50 cursor-pointer"

@@ -4,6 +4,9 @@ import { computeAllBadges, type BadgeInput, type EarnedBadge } from '@/lib/credi
 
 const STALE_TIME = 5 * 60 * 1000; // 5 分钟
 
+type FulfillmentRow = { status: 'fulfilled' | 'no_show' | 'left_early' | 'cancelled' };
+type FulfillmentRowWithUser = FulfillmentRow & { user_id: string };
+
 /**
  * 获取单个用户的勋章列表
  * @param userId 目标用户 ID
@@ -21,10 +24,10 @@ export function useUserBadges(
       if (!userId || creditScore === undefined) return [];
 
       const [fulfillmentResult, membershipResult, reviewResult] = await Promise.all([
-        supabase
+        (supabase as any)
           .from('fulfillment_records')
           .select('status')
-          .eq('user_id', userId),
+          .eq('user_id', userId) as Promise<{ data: FulfillmentRow[] | null; error: unknown }>,
         supabase
           .from('group_members')
           .select('joined_at')
@@ -37,7 +40,7 @@ export function useUserBadges(
 
       const input: BadgeInput = {
         creditScore,
-        fulfillmentRecords: (fulfillmentResult.data ?? []) as BadgeInput['fulfillmentRecords'],
+        fulfillmentRecords: fulfillmentResult.data ?? [],
         groupMemberships: membershipResult.data ?? [],
         reviews: reviewResult.data ?? [],
       };
@@ -65,10 +68,10 @@ export function useMultiUserBadges(
       if (userIds.length === 0) return {};
 
       const [fulfillmentResult, membershipResult, reviewResult] = await Promise.all([
-        supabase
+        (supabase as any)
           .from('fulfillment_records')
           .select('user_id, status')
-          .in('user_id', userIds),
+          .in('user_id', userIds) as Promise<{ data: FulfillmentRowWithUser[] | null; error: unknown }>,
         supabase
           .from('group_members')
           .select('user_id, joined_at')
@@ -92,7 +95,7 @@ export function useMultiUserBadges(
 
       for (const r of (fulfillmentResult.data ?? [])) {
         if (r.user_id in fulfillmentByUser) {
-          fulfillmentByUser[r.user_id].push({ status: r.status as any });
+          fulfillmentByUser[r.user_id].push({ status: r.status });
         }
       }
       for (const m of (membershipResult.data ?? [])) {

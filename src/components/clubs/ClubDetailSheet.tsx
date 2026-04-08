@@ -2,7 +2,8 @@
  * T15 4.3.4 俱乐部 — 俱乐部详情底部弹出面板
  */
 import { useState } from 'react';
-import { Users, Megaphone, Settings, Check, X, Trash2, Plus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Users, Megaphone, Settings, Check, X, Trash2, Plus, Swords } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
@@ -29,8 +30,10 @@ import {
 } from '@/hooks/useClubs';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
+import { useClubGroups } from '@/hooks/useGroups';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
+import StatusBadge from '@/components/shared/StatusBadge';
 
 interface ClubDetailSheetProps {
   club: Club | null;
@@ -41,12 +44,14 @@ interface ClubDetailSheetProps {
 export default function ClubDetailSheet({ club, open, onOpenChange }: ClubDetailSheetProps) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [announcementContent, setAnnouncementContent] = useState('');
   const [showAnnouncementInput, setShowAnnouncementInput] = useState(false);
 
   const isManager = canManageClub(club?.myRole ?? null);
 
   const { data: members = [], isLoading: membersLoading } = useClubMembers(club?.id);
+  const { data: clubGroups = [], isLoading: clubGroupsLoading } = useClubGroups(club?.id);
   const { data: pendingMembers = [] } = useClubPendingMembers(isManager ? club?.id : undefined);
   const { data: announcements = [], isLoading: announcementsLoading } = useClubAnnouncements(club?.id);
 
@@ -123,6 +128,7 @@ export default function ClubDetailSheet({ club, open, onOpenChange }: ClubDetail
             <TabsTrigger value="members" className="flex-1">
               成员 {members.length > 0 && <span className="ml-1 text-[10px]">({members.length})</span>}
             </TabsTrigger>
+            <TabsTrigger value="groups" className="flex-1">拼团</TabsTrigger>
             <TabsTrigger value="announcements" className="flex-1">公告</TabsTrigger>
             {isManager && pendingMembers.length > 0 && (
               <TabsTrigger value="pending" className="flex-1">
@@ -168,6 +174,49 @@ export default function ClubDetailSheet({ club, open, onOpenChange }: ClubDetail
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   )}
+                </div>
+              ))
+            )}
+          </TabsContent>
+
+          {/* 拼团列表 */}
+          <TabsContent value="groups" className="mt-3 space-y-3">
+            {isManager && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full gap-1.5 text-xs"
+                onClick={() => {
+                  onOpenChange(false);
+                  navigate(`/group/create?club_id=${club.id}`);
+                }}
+              >
+                <Swords className="h-3.5 w-3.5" />
+                发起拼团
+              </Button>
+            )}
+            {clubGroupsLoading ? (
+              <LoadingState />
+            ) : clubGroups.length === 0 ? (
+              <EmptyState
+                icon={<Swords className="h-6 w-6" />}
+                title="暂无关联拼团"
+                description={isManager ? "发起一场拼团吧" : "该俱乐部暂无拼团"}
+              />
+            ) : (
+              clubGroups.map(g => (
+                <div
+                  key={g.id}
+                  className="flex items-center justify-between p-3 bg-muted/50 rounded-lg cursor-pointer hover:bg-muted/80"
+                  onClick={() => { onOpenChange(false); navigate(`/group/${g.id}`); }}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{g.address}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {format(new Date(g.start_time), 'M月d日 HH:mm', { locale: zhCN })}
+                    </p>
+                  </div>
+                  <StatusBadge status={g.status} />
                 </div>
               ))
             )}

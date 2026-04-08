@@ -26,6 +26,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import AddFriendButton from '@/components/friends/AddFriendButton';
 import InviteFriendsDialog from '@/components/friends/InviteFriendsDialog';
+import { CheckInButton } from '@/components/attendance/CheckInButton';
 import { REAL_NAME_SCENES } from '@/constants/realName';
 import { getGroupEmergencyFillMeta } from '@/lib/group-emergency-fill';
 import {
@@ -839,6 +840,15 @@ export default function GroupDetailPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          {(group.status === 'IN_PROGRESS' || group.status === 'COMPLETED') && (isMember || isHost) && (
+            <CheckInButton
+              groupId={group.id}
+              userId={user?.id}
+              onSuccess={() => queryClient.invalidateQueries({ queryKey: ['group'] })}
+              variant="outline"
+            />
+          )}
 
           {group.status === 'COMPLETED' && isMember && (
             <Button className="w-full text-base h-11" onClick={() => navigate(`/group/${group.id}/review`)}>去评价</Button>

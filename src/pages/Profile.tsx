@@ -9,6 +9,7 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import LoadingState from '@/components/shared/LoadingState';
 import ReportDialog from '@/components/shared/ReportDialog';
 import { useProfileById, useReviewsByTarget, useGroupsByMember, useCreditHistory, useFulfillmentProfiles } from '@/hooks/useProfile';
+import { FulfillmentRecords } from '@/components/attendance/FulfillmentRecords';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserBadges } from '@/hooks/useCreditBadges';
 import UserBadges from '@/components/shared/UserBadges';
@@ -243,6 +244,11 @@ export default function ProfilePage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Fulfillment Records - full history for self, summary already shown above for others */}
+        {isSelf && (
+          <FulfillmentRecords userId={profile.id} hideAppeal={false} />
+        )}
 
         {/* Credit History - only visible to self */}
         {isSelf && (

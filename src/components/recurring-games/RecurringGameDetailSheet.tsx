@@ -2,7 +2,7 @@
  * T15 4.3.5 长期局 — 详情面板（底部弹出）
  */
 import { useState } from 'react';
-import { Calendar, Check, MapPin, UserMinus, X } from 'lucide-react';
+import { Calendar, Check, MapPin, Megaphone, Plus, UserMinus, X } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import LoadingState from '@/components/shared/LoadingState';
 import EmptyState from '@/components/shared/EmptyState';
 import {
@@ -31,6 +32,11 @@ import {
 import {
   useRecurringGameMembers,
   useRecurringGameSessions,
+  useRecurringGameAnnouncements,
+  useCreateRecurringGameAnnouncement,
+  useDeleteRecurringGameAnnouncement,
+  useSessionAttendance,
+  useMarkSessionAttendance,
   useReviewRecurringGameMember,
   useRemoveRecurringGameMember,
   useUpdateMemberStatus,
@@ -47,14 +53,70 @@ interface Props {
   onOpenChange: (open: boolean) => void;
 }
 
+// ─── 场次出勤面板（子组件） ────────────────────────────────────
+
+interface AttendancePanelProps {
+  sessionId: string;
+  gameId: string;
+  members: Array<{ id: string; userId: string; profile: { nickname: string; avatarUrl: string | null } }>;
+  organizer: boolean;
+  onMark: (vars: { sessionId: string; gameId: string; userId: string; status: 'attended' | 'absent' | 'on_leave' }) => void;
+}
+
+function SessionAttendancePanel({ sessionId, gameId, members, organizer, onMark }: AttendancePanelProps) {
+  const { data: attendance = [] } = useSessionAttendance(sessionId);
+  const attendanceMap = Object.fromEntries(attendance.map(a => [a.userId, a.status]));
+
+  return (
+    <div className="border-t px-3 pb-3 pt-2 space-y-2">
+      <p className="text-xs font-medium text-muted-foreground">出勤记录</p>
+      {members.map(m => {
+        const status = attendanceMap[m.userId];
+        return (
+          <div key={m.id} className="flex items-center gap-2">
+            <Avatar className="h-6 w-6">
+              <AvatarImage src={m.profile.avatarUrl ?? undefined} />
+              <AvatarFallback className="text-[10px]">{m.profile.nickname[0]}</AvatarFallback>
+            </Avatar>
+            <span className="flex-1 text-xs truncate">{m.profile.nickname}</span>
+            {organizer ? (
+              <div className="flex gap-1">
+                {(['attended', 'absent', 'on_leave'] as const).map(s => (
+                  <Button
+                    key={s}
+                    size="sm"
+                    variant={status === s ? 'default' : 'outline'}
+                    className={`h-6 px-1.5 text-[10px] ${s === 'attended' ? 'text-green-700' : s === 'absent' ? 'text-destructive' : 'text-yellow-600'}`}
+                    onClick={() => onMark({ sessionId, gameId, userId: m.userId, status: s })}
+                  >
+                    {s === 'attended' ? '到场' : s === 'absent' ? '缺席' : '请假'}
+                  </Button>
+                ))}
+              </div>
+            ) : (
+              <Badge variant={status === 'attended' ? 'default' : status === 'absent' ? 'destructive' : 'secondary'} className="text-[10px]">
+                {status === 'attended' ? '到场' : status === 'absent' ? '缺席' : status === 'on_leave' ? '请假' : '未标记'}
+              </Badge>
+            )}
+          </div>
+        );
+      })}
+      {members.length === 0 && <p className="text-xs text-muted-foreground">暂无活跃成员</p>}
+    </div>
+  );
+}
+
 export default function RecurringGameDetailSheet({ game, open, onOpenChange }: Props) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [sessionDate, setSessionDate] = useState('');
   const [sessionDialogOpen, setSessionDialogOpen] = useState(false);
+  const [announcementContent, setAnnouncementContent] = useState('');
+  const [showAnnouncementInput, setShowAnnouncementInput] = useState(false);
 
   const { data: members = [], isLoading: membersLoading } = useRecurringGameMembers(game?.id);
   const { data: sessions = [], isLoading: sessionsLoading } = useRecurringGameSessions(game?.id);
+  const { data: announcements = [], isLoading: announcementsLoading } = useRecurringGameAnnouncements(game?.id);
 
   const reviewMember = useReviewRecurringGameMember();
   const removeMember = useRemoveRecurringGameMember();
@@ -62,6 +124,10 @@ export default function RecurringGameDetailSheet({ game, open, onOpenChange }: P
   const createSession = useCreateSession();
   const updateSessionStatus = useUpdateSessionStatus();
   const updateGameStatus = useUpdateRecurringGameStatus();
+  const createAnnouncement = useCreateRecurringGameAnnouncement();
+  const deleteAnnouncement = useDeleteRecurringGameAnnouncement();
+  const markAttendance = useMarkSessionAttendance();
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
 
   if (!game) return null;
 
@@ -131,6 +197,27 @@ export default function RecurringGameDetailSheet({ game, open, onOpenChange }: P
     }
   };
 
+  const handlePostAnnouncement = async () => {
+    if (!announcementContent.trim()) return;
+    try {
+      await createAnnouncement.mutateAsync({ gameId: game.id, content: announcementContent });
+      toast({ title: '公告已发布' });
+      setAnnouncementContent('');
+      setShowAnnouncementInput(false);
+    } catch (err: any) {
+      toast({ title: '发布失败', description: err.message, variant: 'destructive' });
+    }
+  };
+
+  const handleDeleteAnnouncement = async (announcementId: string) => {
+    try {
+      await deleteAnnouncement.mutateAsync({ gameId: game.id, announcementId });
+      toast({ title: '公告已删除' });
+    } catch (err: any) {
+      toast({ title: '删除失败', description: err.message, variant: 'destructive' });
+    }
+  };
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="bottom" className="h-[80vh] overflow-y-auto rounded-t-2xl">
@@ -164,7 +251,8 @@ export default function RecurringGameDetailSheet({ game, open, onOpenChange }: P
                 <Badge className="ml-1.5 h-4 px-1 text-xs bg-destructive">{pendingMembers.length}</Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="sessions" className="flex-1">场次记录</TabsTrigger>
+            <TabsTrigger value="announcements" className="flex-1">公告</TabsTrigger>
+            <TabsTrigger value="sessions" className="flex-1">场次</TabsTrigger>
             {organizer && (
               <TabsTrigger value="manage" className="flex-1">管理</TabsTrigger>
             )}
@@ -262,6 +350,88 @@ export default function RecurringGameDetailSheet({ game, open, onOpenChange }: P
             )}
           </TabsContent>
 
+          {/* 公告 Tab */}
+          <TabsContent value="announcements" className="mt-4 space-y-3">
+            {organizer && (
+              <div>
+                {showAnnouncementInput ? (
+                  <div className="space-y-2">
+                    <Textarea
+                      placeholder="写一条公告…（最多500字）"
+                      value={announcementContent}
+                      onChange={e => setAnnouncementContent(e.target.value.slice(0, 500))}
+                      className="resize-none"
+                      rows={3}
+                      autoFocus
+                    />
+                    <div className="text-xs text-muted-foreground text-right">{announcementContent.length}/500</div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        onClick={handlePostAnnouncement}
+                        disabled={!announcementContent.trim() || createAnnouncement.isPending}
+                      >
+                        发布
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => { setShowAnnouncementInput(false); setAnnouncementContent(''); }}
+                      >
+                        取消
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full gap-1.5 text-xs"
+                    onClick={() => setShowAnnouncementInput(true)}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    发布公告
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {announcementsLoading ? (
+              <LoadingState />
+            ) : announcements.length === 0 ? (
+              <EmptyState
+                icon={<Megaphone className="h-8 w-8" />}
+                title="暂无公告"
+                description={organizer ? '发布一条公告让成员了解最新动态' : '组织者暂未发布公告'}
+              />
+            ) : (
+              <div className="space-y-2">
+                {announcements.map(ann => (
+                  <div key={ann.id} className="p-3 rounded-lg bg-muted/50 space-y-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        {ann.author.nickname} · {new Date(ann.createdAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}
+                      </span>
+                      {(organizer || ann.createdBy === user?.id) && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5 text-muted-foreground hover:text-destructive shrink-0"
+                          onClick={() => handleDeleteAnnouncement(ann.id)}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-sm">{ann.content}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
           {/* 场次记录 Tab */}
           <TabsContent value="sessions" className="mt-4 space-y-3">
             {organizer && (
@@ -308,36 +478,57 @@ export default function RecurringGameDetailSheet({ game, open, onOpenChange }: P
             ) : (
               <div className="space-y-2">
                 {sessions.map(s => (
-                  <div key={s.id} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{s.sessionDate}</p>
-                      {s.notes && <p className="text-xs text-muted-foreground">{s.notes}</p>}
-                    </div>
-                    <Badge
-                      variant={s.status === 'confirmed' ? 'default' : s.status === 'cancelled' ? 'destructive' : 'secondary'}
-                      className="text-xs"
-                    >
-                      {SESSION_STATUS_LABELS[s.status]}
-                    </Badge>
-                    {organizer && s.status === 'scheduled' && (
-                      <div className="flex gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 text-xs text-green-600"
-                          onClick={() => handleSessionStatus(s.id, 'confirmed')}
-                        >
-                          确认
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 text-xs text-destructive"
-                          onClick={() => handleSessionStatus(s.id, 'cancelled')}
-                        >
-                          取消
-                        </Button>
+                  <div key={s.id} className="bg-muted/50 rounded-lg overflow-hidden">
+                    <div className="flex items-center gap-3 p-3">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{s.sessionDate}</p>
+                        {s.notes && <p className="text-xs text-muted-foreground">{s.notes}</p>}
                       </div>
+                      <Badge
+                        variant={s.status === 'confirmed' ? 'default' : s.status === 'cancelled' ? 'destructive' : 'secondary'}
+                        className="text-xs"
+                      >
+                        {SESSION_STATUS_LABELS[s.status]}
+                      </Badge>
+                      {organizer && s.status === 'scheduled' && (
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs text-green-600"
+                            onClick={() => handleSessionStatus(s.id, 'confirmed')}
+                          >
+                            确认
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs text-destructive"
+                            onClick={() => handleSessionStatus(s.id, 'cancelled')}
+                          >
+                            取消
+                          </Button>
+                        </div>
+                      )}
+                      {s.status === 'confirmed' && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs"
+                          onClick={() => setExpandedSessionId(prev => prev === s.id ? null : s.id)}
+                        >
+                          出勤
+                        </Button>
+                      )}
+                    </div>
+                    {expandedSessionId === s.id && (
+                      <SessionAttendancePanel
+                        sessionId={s.id}
+                        gameId={game.id}
+                        members={activeMembers}
+                        organizer={organizer}
+                        onMark={markAttendance.mutate}
+                      />
                     )}
                   </div>
                 ))}

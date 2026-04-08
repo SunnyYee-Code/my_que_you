@@ -470,3 +470,146 @@ export function useUpdateRecurringGameStatus() {
     },
   });
 }
+
+// ─── 长期局公告 ──────────────────────────────────────────────
+
+export interface RecurringGameAnnouncement {
+  id: string;
+  gameId: string;
+  content: string;
+  createdBy: string;
+  createdAt: string;
+  author: {
+    nickname: string;
+    avatarUrl: string | null;
+  };
+}
+
+export function useRecurringGameAnnouncements(gameId: string | undefined) {
+  return useQuery({
+    queryKey: ['recurring-games', gameId, 'announcements'],
+    enabled: !!gameId,
+    queryFn: async (): Promise<RecurringGameAnnouncement[]> => {
+      if (!gameId) return [];
+      const { data, error } = await supabase
+        .from('recurring_game_announcements')
+        .select('id, game_id, content, created_by, created_at, profiles(nickname, avatar_url)')
+        .eq('game_id', gameId)
+        .order('created_at', { ascending: false })
+        .limit(30);
+      if (error) throw error;
+      return (data || []).map((a: any): RecurringGameAnnouncement => ({
+        id: a.id,
+        gameId: a.game_id,
+        content: a.content,
+        createdBy: a.created_by,
+        createdAt: a.created_at,
+        author: {
+          nickname: a.profiles?.nickname || '未知用户',
+          avatarUrl: a.profiles?.avatar_url ?? null,
+        },
+      }));
+    },
+  });
+}
+
+export function useCreateRecurringGameAnnouncement() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ gameId, content }: { gameId: string; content: string }) => {
+      if (!user) throw new Error('请先登录');
+      const { error } = await supabase
+        .from('recurring_game_announcements')
+        .insert({ game_id: gameId, content: content.trim(), created_by: user.id } as any);
+      if (error) throw error;
+    },
+    onSuccess: (_data, { gameId }) => {
+      queryClient.invalidateQueries({ queryKey: ['recurring-games', gameId, 'announcements'] });
+    },
+  });
+}
+
+export function useDeleteRecurringGameAnnouncement() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ gameId, announcementId }: { gameId: string; announcementId: string }) => {
+      const { error } = await supabase
+        .from('recurring_game_announcements')
+        .delete()
+        .eq('id', announcementId);
+      if (error) throw error;
+      return gameId;
+    },
+    onSuccess: (_data, { gameId }) => {
+      queryClient.invalidateQueries({ queryKey: ['recurring-games', gameId, 'announcements'] });
+    },
+  });
+}
+
+// ─── 场次出勤记录 ────────────────────────────────────────────
+
+export type SessionAttendanceStatus = 'attended' | 'absent' | 'on_leave';
+
+export interface SessionAttendance {
+  id: string;
+  sessionId: string;
+  userId: string;
+  status: SessionAttendanceStatus;
+  notes: string | null;
+}
+
+export function useSessionAttendance(sessionId: string | undefined) {
+  return useQuery({
+    queryKey: ['recurring-games', 'session-attendance', sessionId],
+    enabled: !!sessionId,
+    queryFn: async (): Promise<SessionAttendance[]> => {
+      if (!sessionId) return [];
+      const { data, error } = await supabase
+        .from('recurring_game_session_attendance')
+        .select('id, session_id, user_id, status, notes')
+        .eq('session_id', sessionId);
+      if (error) throw error;
+      return (data || []).map((a: any): SessionAttendance => ({
+        id: a.id,
+        sessionId: a.session_id,
+        userId: a.user_id,
+        status: a.status,
+        notes: a.notes ?? null,
+      }));
+    },
+  });
+}
+
+export function useMarkSessionAttendance() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      sessionId,
+      gameId,
+      userId,
+      status,
+    }: {
+      sessionId: string;
+      gameId: string;
+      userId: string;
+      status: SessionAttendanceStatus;
+    }) => {
+      if (!user) throw new Error('请先登录');
+      const { error } = await supabase
+        .from('recurring_game_session_attendance')
+        .upsert(
+          { session_id: sessionId, game_id: gameId, user_id: userId, status, marked_by: user.id },
+          { onConflict: 'session_id,user_id' }
+        ) as any;
+      if (error) throw error;
+    },
+    onSuccess: (_data, { sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: ['recurring-games', 'session-attendance', sessionId] });
+    },
+  });
+}

@@ -61,6 +61,7 @@ export function useCreateGroup() {
       needed_slots: number;
       play_style?: string;
       game_note?: string;
+      club_id?: string;
     }) => {
       if (!user) throw new Error('请先登录');
 
@@ -186,6 +187,26 @@ export function useUpdateRequestStatus() {
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       queryClient.invalidateQueries({ queryKey: ['group', variables.groupId] });
       queryClient.invalidateQueries({ queryKey: ['my-groups'] });
+    },
+  });
+}
+
+// ─── 俱乐部关联拼团列表 ──────────────────────────────────────
+
+export function useClubGroups(clubId: string | undefined) {
+  return useQuery({
+    queryKey: ['groups', 'club', clubId],
+    enabled: !!clubId,
+    queryFn: async () => {
+      if (!clubId) return [];
+      const { data, error } = await supabase
+        .from('groups')
+        .select('id, address, start_time, end_time, status, total_slots, needed_slots')
+        .eq('club_id', clubId)
+        .order('start_time', { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      return data || [];
     },
   });
 }

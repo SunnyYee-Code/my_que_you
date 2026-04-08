@@ -30,7 +30,14 @@ import Notifications from "./pages/Notifications";
 import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,  // 5 分钟内不重新请求
+      gcTime: 10 * 60 * 1000,    // 10 分钟后从缓存中清除
+    },
+  },
+});
 
 // Performance monitoring wrapper component
 const PerformanceMonitoringWrapper = ({ children }: { children: React.ReactNode }) => {
