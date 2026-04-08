@@ -79,7 +79,32 @@ vi.mock('@/hooks/useBlacklist', () => ({
 vi.mock('@/hooks/useCreditBadges', () => ({
   useUserBadges: () => ({ data: [], isLoading: false, error: null }),
 }));
+vi.mock('@/hooks/useMembership', () => ({
+  useMembershipStatus: () => ({
+    data: {
+      id: 'user-2',
+      is_member: false,
+      member_tier: 'free',
+      show_in_leaderboard: true,
+    },
+    isLoading: false,
+    error: null,
+  }),
+}));
+vi.mock('@/hooks/useLeaderboard', () => ({
+  useUserLeaderboardRank: () => ({
+    data: null,
+    isLoading: false,
+    error: null,
+  }),
+  useLeaderboard: () => ({
+    data: [],
+    isLoading: false,
+    error: null,
+  }),
+}));
 vi.mock('@/components/shared/UserBadges', () => ({ default: () => null }));
+vi.mock('@/components/shared/MemberBadge', () => ({ MemberBadge: () => null }));
 
 function renderPage() {
   return render(

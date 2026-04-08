@@ -8,7 +8,9 @@ import CreditBadge from '@/components/shared/CreditBadge';
 import StatusBadge from '@/components/shared/StatusBadge';
 import LoadingState from '@/components/shared/LoadingState';
 import ReportDialog from '@/components/shared/ReportDialog';
+import { MemberBadge } from '@/components/shared/MemberBadge';
 import { useProfileById, useReviewsByTarget, useGroupsByMember, useCreditHistory, useFulfillmentProfiles } from '@/hooks/useProfile';
+import { useMembershipStatus } from '@/hooks/useMembership';
 import { FulfillmentRecords } from '@/components/attendance/FulfillmentRecords';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserBadges } from '@/hooks/useCreditBadges';
@@ -27,6 +29,7 @@ export default function ProfilePage() {
   const { user, isAdmin } = useAuth();
   const isSelf = id === user?.id;
   const { data: profile, isLoading: profileLoading } = useProfileById(id);
+  const { data: membership } = useMembershipStatus(id);
   const { data: reviews = [] } = useReviewsByTarget(id);
   const { data: groups = [] } = useGroupsByMember(id);
   const { data: creditHistory = [] } = useCreditHistory(isSelf ? id : undefined);
@@ -97,6 +100,13 @@ export default function ProfilePage() {
                  <div className="flex items-center gap-3">
                     <h1 className="text-xl font-bold">{profile.nickname}</h1>
                     <CreditBadge score={profile.credit_score} />
+                    {membership && (
+                      <MemberBadge
+                        isMember={membership.is_member}
+                        memberTier={membership.member_tier as any}
+                        size="md"
+                      />
+                    )}
                   </div>
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <span>UID: {(profile as any).uid}</span>

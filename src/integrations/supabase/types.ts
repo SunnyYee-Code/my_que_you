@@ -890,8 +890,10 @@ export type Database = {
           daily_join_limit: number
           id: string
           is_banned: boolean
+          is_member: boolean
           max_duration_hours: number
           max_start_hours: number
+          member_tier: string
           nickname: string | null
           onboarding_completed: boolean
           phone: string | null
@@ -907,6 +909,7 @@ export type Database = {
           deletion_requested_at: string | null
           deletion_completed_at: string | null
           deleted_at: string | null
+          show_in_leaderboard: boolean
           uid: string
           updated_at: string
         }
@@ -921,8 +924,10 @@ export type Database = {
           daily_join_limit?: number
           id: string
           is_banned?: boolean
+          is_member?: boolean
           max_duration_hours?: number
           max_start_hours?: number
+          member_tier?: string
           nickname?: string | null
           onboarding_completed?: boolean
           phone?: string | null
@@ -938,6 +943,7 @@ export type Database = {
           deletion_requested_at?: string | null
           deletion_completed_at?: string | null
           deleted_at?: string | null
+          show_in_leaderboard?: boolean
           uid?: string
           updated_at?: string
         }
@@ -952,8 +958,10 @@ export type Database = {
           daily_join_limit?: number
           id?: string
           is_banned?: boolean
+          is_member?: boolean
           max_duration_hours?: number
           max_start_hours?: number
+          member_tier?: string
           nickname?: string | null
           onboarding_completed?: boolean
           phone?: string | null
@@ -969,6 +977,7 @@ export type Database = {
           deletion_requested_at?: string | null
           deletion_completed_at?: string | null
           deleted_at?: string | null
+          show_in_leaderboard?: boolean
           uid?: string
           updated_at?: string
         }
