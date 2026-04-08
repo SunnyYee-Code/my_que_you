@@ -25,6 +25,7 @@ import { useCity } from '@/contexts/CityContext'
 import { supabase } from '@/integrations/supabase/client'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useToast } from '@/hooks/use-toast'
+import { usePinGroup, useUnpinGroup } from '@/hooks/usePinnedGroups'
 import {
   buildNotificationDeliveryFields,
   buildNotificationDeliveryLogFields,
@@ -1360,11 +1361,22 @@ function GroupCard({ group, isSuperAdmin, onUpdate }: any) {
   const [address, setAddress] = useState(group.address)
   const [gameNote, setGameNote] = useState(group.game_note || '')
   const [isVisible, setIsVisible] = useState(group.is_visible ?? true)
+  const [isPinned, setIsPinned] = useState(group.is_pinned ?? false)
 
   const handleSave = async () => {
+    if (!isSuperAdmin) {
+      throw new Error('Only super admins can modify group settings');
+    }
     const { error } = await supabase
       .from('groups')
-      .update({ status, address, game_note: gameNote, is_visible: isVisible })
+      .update({ 
+        status, 
+        address, 
+        game_note: gameNote, 
+        is_visible: isVisible,
+        is_pinned: isPinned,
+        pinned_at: isPinned ? new Date().toISOString() : null,
+      })
       .eq('id', group.id)
     if (error) toast({ title: '保存失败', variant: 'destructive' })
     else {
@@ -1407,6 +1419,7 @@ function GroupCard({ group, isSuperAdmin, onUpdate }: any) {
               房主: {(group.host as any)?.nickname} · {statusLabels[group.status] || group.status} ·{' '}
               {group.members?.length || 0}/{group.total_slots}人
               {group.is_visible === false && <span className="text-destructive ml-1">· 隐藏</span>}
+              {group.is_pinned && <span className="text-yellow-600 ml-1 font-medium">· 精选</span>}
             </p>
             <p className="text-xs text-muted-foreground">
               {format(new Date(group.start_time), 'MM/dd HH:mm')} - {format(new Date(group.end_time), 'HH:mm')}
@@ -1451,6 +1464,12 @@ function GroupCard({ group, isSuperAdmin, onUpdate }: any) {
                     <Label>社区可见</Label>
                     <Switch checked={isVisible} onCheckedChange={setIsVisible} />
                   </div>
+                  {isSuperAdmin && (
+                    <div className="flex items-center justify-between">
+                      <Label>精选置顶</Label>
+                      <Switch checked={isPinned} onCheckedChange={setIsPinned} />
+                    </div>
+                  )}
                 </div>
                 <DialogFooter>
                   <Button onClick={handleSave}>保存</Button>

@@ -16,7 +16,8 @@ export function useGroupsByCity(cityId: string) {
         `)
         .eq('city_id', cityId)
         .eq('is_visible', true)
-        .order('start_time', { ascending: false });
+        .order('is_pinned', { ascending: false })
+        .order('created_at', { ascending: false });
       if (error) throw error;
       return data;
     },

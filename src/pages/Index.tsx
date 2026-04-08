@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, Clock, Users, RefreshCw, UserPlus, Loader2, Crown, Navigation, ArrowUpDown } from 'lucide-react';
+import { MapPin, Clock, Users, RefreshCw, UserPlus, Loader2, Crown, Navigation, ArrowUpDown, Sparkles } from 'lucide-react';
 import CitySearchSelect from '@/components/layout/CitySearchSelect';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ import { zhCN } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { getGroupEmergencyFillMeta } from '@/lib/group-emergency-fill';
 import { inferPreferredPlayStyles, sortGroupsForDisplay, type GroupSortMode } from '@/lib/group-recommendation';
+import { getPinnedBadgeLabel, sortGroupsByPinned } from '@/lib/pinned-groups';
 import { useToast } from '@/hooks/use-toast';
 
 type StatusFilter = 'all' | 'OPEN' | 'FULL' | 'IN_PROGRESS';
@@ -115,6 +116,8 @@ export default function IndexPage() {
       result = result.filter(g => g.distance !== null && g.distance <= maxKm);
     }
 
+    // Apply pinned sorting first, then additional sort modes
+    result = sortGroupsByPinned(result);
     return sortGroupsForDisplay(result, { sortMode, preferredPlayStyles });
   }, [groupsWithDistance, statusFilter, distanceFilter, sortMode, position, preferredPlayStyles, user]);
 
@@ -313,6 +316,13 @@ export default function IndexPage() {
                   {isInProgress && (
                     <div className="absolute top-3 -right-8 rotate-45 bg-[hsl(var(--status-progress))] text-white text-[10px] font-bold px-8 py-0.5 shadow-sm z-10">
                       进行中
+                    </div>
+                  )}
+
+                  {group.is_pinned && (
+                    <div className="absolute top-3 left-3 flex items-center gap-1 bg-gradient-to-r from-yellow-500 to-amber-500 text-white text-[11px] font-bold px-2.5 py-1 rounded-md shadow-md z-10 animate-pulse">
+                      <Sparkles className="h-3.5 w-3.5" />
+                      {getPinnedBadgeLabel()}
                     </div>
                   )}
 
