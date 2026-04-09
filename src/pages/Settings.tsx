@@ -21,6 +21,7 @@ import { buildRealNameViewModel, getRealNameStatusActions, REAL_NAME_COPY } from
 import { supabase } from '@/integrations/supabase/client';
 import { useBindInviteCode, useInviteCodeSnapshot } from '@/hooks/useInviteCode';
 import { createDefaultInviteCodeSnapshot, validateInviteCode } from '@/lib/invite-code';
+import { useUpdateLeaderboardVisibility, useMyMembershipStatus } from '@/hooks/useMembership';
 import { ArrowLeft, AlertTriangle, Shield, Camera, User, Phone, Calendar, Lock, Trophy } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { format } from 'date-fns';
@@ -38,6 +39,8 @@ export default function SettingsPage() {
   const { data: inviteCodeSnapshot = createDefaultInviteCodeSnapshot(), isLoading: inviteCodeLoading } = useInviteCodeSnapshot();
   const bindInviteCode = useBindInviteCode();
   const updateProfile = useUpdateProfile();
+  const updateLeaderboardVisibility = useUpdateLeaderboardVisibility();
+  const { data: membershipData } = useMyMembershipStatus();
   const { data: realNameSnapshot, isLoading: realNameLoading } = useRealNameVerification();
   const submitRealNameVerification = useSubmitRealNameVerification();
   const cancelRealNameVerification = useCancelRealNameVerification();
@@ -52,11 +55,14 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
   const [inviteCodeInput, setInviteCodeInput] = useState('');
-  const [showInLeaderboard, setShowInLeaderboard] = useState(() => {
-    const stored = localStorage.getItem('show_in_leaderboard');
-    return stored === null ? true : stored === 'true';
-  });
+  const [showInLeaderboard, setShowInLeaderboard] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (membershipData?.show_in_leaderboard != null) {
+      setShowInLeaderboard(membershipData.show_in_leaderboard);
+    }
+  }, [membershipData?.show_in_leaderboard]);
 
   if (authLoading || isLoading || deletionStatusLoading || realNameLoading || inviteCodeLoading) return <AppLayout><LoadingState /></AppLayout>;
 
@@ -314,10 +320,15 @@ export default function SettingsPage() {
     }
   };
 
-  const handleLeaderboardToggle = (checked: boolean) => {
+  const handleLeaderboardToggle = async (checked: boolean) => {
     setShowInLeaderboard(checked);
-    localStorage.setItem('show_in_leaderboard', String(checked));
-    toast({ title: checked ? '已显示在榜单' : '已隐藏榜单排名', description: checked ? '你的活跃度将出现在榜单中' : '你将不会出现在活跃度榜单中' });
+    try {
+      await updateLeaderboardVisibility.mutateAsync(checked);
+      toast({ title: checked ? '已显示在榜单' : '已隐藏榜单排名', description: checked ? '你的活跃度将出现在榜单中' : '你将不会出现在活跃度榜单中' });
+    } catch {
+      setShowInLeaderboard(!checked);
+      toast({ title: '保存失败，请稍后重试', variant: 'destructive' });
+    }
   };
 
   const handleLogout = async () => {

@@ -498,6 +498,8 @@ export type Database = {
           status: Database["public"]["Enums"]["group_status"]
           total_slots: number
           updated_at: string
+          is_pinned: boolean
+          pinned_at: string | null
           venue_hint: Json | null
         }
         Insert: {
@@ -508,10 +510,12 @@ export type Database = {
           game_note?: string | null
           host_id: string
           id?: string
+          is_pinned?: boolean
           is_visible?: boolean
           latitude?: number | null
           longitude?: number | null
           needed_slots: number
+          pinned_at?: string | null
           play_style?: string | null
           start_time: string
           status?: Database["public"]["Enums"]["group_status"]
@@ -527,10 +531,12 @@ export type Database = {
           game_note?: string | null
           host_id?: string
           id?: string
+          is_pinned?: boolean
           is_visible?: boolean
           latitude?: number | null
           longitude?: number | null
           needed_slots?: number
+          pinned_at?: string | null
           play_style?: string | null
           start_time?: string
           status?: Database["public"]["Enums"]["group_status"]

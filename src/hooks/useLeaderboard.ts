@@ -28,8 +28,9 @@ export function useLeaderboard(period: LeaderboardPeriod) {
 
       const { data, error } = await supabase
         .from('group_members')
-        .select('user_id, joined_at, profiles!inner(nickname, avatar_url, credit_score)')
-        .gte('joined_at', since);
+        .select('user_id, joined_at, profiles!inner(nickname, avatar_url, credit_score, show_in_leaderboard)')
+        .gte('joined_at', since)
+        .eq('profiles.show_in_leaderboard', true);
 
       if (error) throw error;
 

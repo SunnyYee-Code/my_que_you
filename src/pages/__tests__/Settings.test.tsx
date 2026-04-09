@@ -60,6 +60,10 @@ vi.mock('@/hooks/useInviteCode', () => ({
   useInviteCodeSnapshot: () => useInviteCodeSnapshotMock(),
   useBindInviteCode: () => useBindInviteCodeMock(),
 }));
+vi.mock('@/hooks/useMembership', () => ({
+  useMyMembershipStatus: () => ({ data: { show_in_leaderboard: true }, isLoading: false }),
+  useUpdateLeaderboardVisibility: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) }),
+}));
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: (...args: any[]) => fromMock(...args),
