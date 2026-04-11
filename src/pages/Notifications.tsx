@@ -4,8 +4,8 @@ import AppLayout from '@/components/layout/AppLayout';
 import EmptyState from '@/components/shared/EmptyState';
 import LoadingState from '@/components/shared/LoadingState';
 import { useAuth } from '@/contexts/AuthContext';
-import { useNotifications, useMarkNotificationRead } from '@/hooks/useNotifications';
-import { ArrowLeft, Bell, AlertTriangle, Star, Users, MessageCircle, Clock } from 'lucide-react';
+import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead } from '@/hooks/useNotifications';
+import { ArrowLeft, Bell, AlertTriangle, Star, Users, MessageCircle, Clock, CheckCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
@@ -25,18 +25,35 @@ export default function NotificationsPage() {
   const { user } = useAuth();
   const { data: notifications = [], isLoading } = useNotifications();
   const markRead = useMarkNotificationRead();
+  const markAllRead = useMarkAllNotificationsRead();
 
   if (!user) { navigate('/login'); return null; }
   if (isLoading) return <AppLayout><LoadingState /></AppLayout>;
 
+  const unreadCount = notifications.filter(n => !n.read).length;
+
   return (
     <AppLayout>
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <h1 className="text-xl font-bold">消息中心</h1>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <h1 className="text-xl font-bold">消息中心</h1>
+          </div>
+          {unreadCount > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs text-muted-foreground gap-1.5"
+              onClick={() => markAllRead.mutate()}
+              disabled={markAllRead.isPending}
+            >
+              <CheckCheck className="h-3.5 w-3.5" />
+              全部已读
+            </Button>
+          )}
         </div>
 
         {notifications.length === 0 ? (

@@ -75,3 +75,23 @@ export function useMarkNotificationRead() {
     },
   });
 }
+
+export function useMarkAllNotificationsRead() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      if (!user) return;
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read: true, read_at: new Date().toISOString() })
+        .eq('user_id', user.id)
+        .eq('read', false);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+  });
+}

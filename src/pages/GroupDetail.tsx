@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import UserBadges from '@/components/shared/UserBadges';
 import { useRealNameVerification } from '@/hooks/useRealNameVerification';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { ArrowLeft, MapPin, Clock, Users, Navigation, MessageCircle, AlertTriangle, Crown, ChevronRight, HelpCircle, UserMinus, Share2, Copy, Download, Info, Pencil, Calculator } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock, Users, Navigation, MessageCircle, AlertTriangle, Crown, ChevronRight, HelpCircle, UserMinus, Share2, Copy, Download, Info, Pencil, Calculator, ExternalLink } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
@@ -82,6 +82,7 @@ export default function GroupDetailPage() {
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [venueHintDialogOpen, setVenueHintDialogOpen] = useState(false);
   const [venueHintDraft, setVenueHintDraft] = useState<VenueHint>({});
+  const [navDialogOpen, setNavDialogOpen] = useState(false);
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -91,6 +92,59 @@ export default function GroupDetailPage() {
   const { data: realNameSnapshot, isLoading: realNameLoading, isError: realNameError } = useRealNameVerification();
 
   const updateVenueHint = useUpdateVenueHint(id);
+
+  // Real-time synchronization
+  useEffect(() => {
+    if (!id) return;
+
+    // Listen for group changes (status, needed_slots, etc.)
+    const groupChannel = supabase
+      .channel(`group-detail-${id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'groups', filter: `id=eq.${id}` },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['group', id] });
+        }
+      )
+      // Listen for membership changes (joins, leaves, kicks)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'group_members', filter: `group_id=eq.${id}` },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['group', id] });
+          queryClient.invalidateQueries({ queryKey: ['my-application', id] });
+        }
+      )
+      .subscribe();
+
+    // Listen for current user's application status changes (approved, rejected)
+    let applicationChannel: any = null;
+    if (user) {
+      applicationChannel = supabase
+        .channel(`my-application-${id}-${user.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'join_requests',
+            filter: `group_id=eq.${id} AND user_id=eq.${user.id}`,
+          },
+          () => {
+            queryClient.invalidateQueries({ queryKey: ['my-application', id, user.id] });
+            queryClient.invalidateQueries({ queryKey: ['group', id] });
+            toast({ title: '申请状态已更新' });
+          }
+        )
+        .subscribe();
+    }
+
+    return () => {
+      supabase.removeChannel(groupChannel);
+      if (applicationChannel) supabase.removeChannel(applicationChannel);
+    };
+  }, [id, user, queryClient, toast]);
 
   const { data: myApp } = useQuery({
     queryKey: ['my-application', id, user?.id],
@@ -527,11 +581,41 @@ export default function GroupDetailPage() {
     }
   };
 
-  const handleNavigate = () => {
-    if (group.latitude && group.longitude) {
-      window.open(`https://uri.amap.com/marker?position=${group.longitude},${group.latitude}&name=${encodeURIComponent(group.address)}`, '_blank');
-    } else {
-      window.open(`https://uri.amap.com/search?keyword=${encodeURIComponent(group.address)}`, '_blank');
+  const handleNavigate = (type: 'amap' | 'baidu' | 'apple' | 'browser') => {
+    const { latitude: lat, longitude: lng, address } = group;
+    const encodedAddress = encodeURIComponent(address);
+
+    let url = '';
+    switch (type) {
+      case 'amap':
+        // Amap App: iosamap://viewMap?sourceApplication=myqueyou&poiname=...&lat=...&lon=...&dev=0
+        url = lat && lng
+          ? `amapuri://marker?position=${lng},${lat}&name=${encodedAddress}&coordinate=gaode&callnative=1`
+          : `amapuri://search?query=${encodedAddress}&callnative=1`;
+        break;
+      case 'baidu':
+        // Baidu Map: baidumap://map/marker?location=...&title=...&content=...&coord_type=gcj02&src=ios.baidu.openAPIdemo
+        url = lat && lng
+          ? `baidumap://map/marker?location=${lat},${lng}&title=${encodedAddress}&coord_type=gcj02&src=myqueyou`
+          : `baidumap://map/geocoder?address=${encodedAddress}&src=myqueyou`;
+        break;
+      case 'apple':
+        // Apple Maps: http://maps.apple.com/?q=...&ll=...
+        url = lat && lng
+          ? `http://maps.apple.com/?q=${encodedAddress}&ll=${lat},${lng}`
+          : `http://maps.apple.com/?q=${encodedAddress}`;
+        break;
+      case 'browser':
+      default:
+        url = lat && lng
+          ? `https://uri.amap.com/marker?position=${lng},${lat}&name=${encodedAddress}`
+          : `https://uri.amap.com/search?keyword=${encodedAddress}`;
+        break;
+    }
+
+    if (url) {
+      window.open(url, '_blank');
+      setNavDialogOpen(false);
     }
   };
 
@@ -581,9 +665,33 @@ export default function GroupDetailPage() {
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-[15px]">{group.address}</p>
               </div>
-              <Button variant="outline" size="sm" className="gap-1.5 shrink-0" onClick={handleNavigate}>
-                <Navigation className="h-3.5 w-3.5" /> 导航
-              </Button>
+              <Dialog open={navDialogOpen} onOpenChange={setNavDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-1.5 shrink-0">
+                    <Navigation className="h-3.5 w-3.5" /> 导航
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-xs">
+                  <DialogHeader>
+                    <DialogTitle>选择地图 App</DialogTitle>
+                    <DialogDescription>跳转到第三方地图应用进行导航</DialogDescription>
+                  </DialogHeader>
+                  <div className="grid grid-cols-1 gap-2 py-2">
+                    <Button variant="outline" className="justify-start gap-3" onClick={() => handleNavigate('amap')}>
+                      <img src="/placeholder.svg" alt="高德" className="h-5 w-5 rounded" /> 高德地图
+                    </Button>
+                    <Button variant="outline" className="justify-start gap-3" onClick={() => handleNavigate('baidu')}>
+                      <img src="/placeholder.svg" alt="百度" className="h-5 w-5 rounded" /> 百度地图
+                    </Button>
+                    <Button variant="outline" className="justify-start gap-3" onClick={() => handleNavigate('apple')}>
+                      <Navigation className="h-5 w-5 text-blue-500" /> Apple 地图
+                    </Button>
+                    <Button variant="ghost" className="justify-start gap-3 text-muted-foreground" onClick={() => handleNavigate('browser')}>
+                      <ExternalLink className="h-5 w-5" /> 浏览器打开
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
             </div>
 
             {/* Time */}

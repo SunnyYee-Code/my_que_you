@@ -45,18 +45,65 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Notify host
+      // If completed, reward credit to host and members
+      if (newStatus === "COMPLETED") {
+        const { data: members } = await admin
+          .from("group_members")
+          .select("user_id")
+          .eq("group_id", group.id);
+
+        if (members) {
+          for (const member of members) {
+            // Add credit to profile
+            const { data: profile } = await admin
+              .from("profiles")
+              .select("credit_score")
+              .eq("id", member.user_id)
+              .single();
+
+            if (profile) {
+              await admin
+                .from("profiles")
+                .update({ credit_score: profile.credit_score + 1 })
+                .eq("id", member.user_id);
+
+              // Record history
+              await admin.from("credit_history").insert({
+                user_id: member.user_id,
+                change: 1,
+                reason: "完成拼团奖励",
+                group_id: group.id,
+                can_appeal: false,
+              });
+
+              // Notify member
+              await admin.from("notifications").insert({
+                user_id: member.user_id,
+                type: "credit_change",
+                title: "信用分变动",
+                content: `恭喜！完成拼团「${group.address}」，信用分 +1`,
+                link_to: `/profile/${member.user_id}`,
+              });
+            }
+          }
+        }
+      }
+
+      // Notify host (if not already notified as member)
       const title = newStatus === "COMPLETED" ? "拼团已完成" : "拼团已过期";
       const content = newStatus === "COMPLETED"
         ? `您的拼团「${group.address}」已自动标记为完成`
         : `您的拼团「${group.address}」已超过结束时间，自动关闭`;
 
+      // Host is already a member, so they get the credit notification. 
+      // We can send an additional status notification or just skip if they are member.
+      // To be safe, always send the status notification.
       await admin.from("notifications").insert({
         user_id: group.host_id,
-        type: "group_cancelled",
+        type: "group_cancelled", // Reuse type or use something else
         title,
         content,
-        link_to: `/groups/${group.id}`,
+        link_to: `/group/${group.id}`,
       });
 
       expiredCount++;

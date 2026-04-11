@@ -102,6 +102,19 @@ npm run lint       # 代码检查
 npm test           # 运行测试
 ```
 
+## Supabase 配置说明
+
+为了确保核心功能正常运行，请在 Supabase 后台完成以下配置：
+
+### 1. 存储桶 (Storage)
+- 创建名为 `avatars` 的存储桶，并设置为 **Public**。
+- 配置 RLS 策略以允许用户上传自己的头像。
+
+### 2. 定时任务 (Cron)
+- 为 `auto-expire-groups` 函数配置 Cron 触发器。
+- 建议频率：`*/10 * * * *`（每 10 分钟一次）。
+- 作用：自动处理过期拼团并结算信用分。
+
 ## Agent Swarm Bootstrap
 
 仓库内置了一个最小可运行的 `.clawdbot/` 编排层，先服务于 Web 端仓库本身。

@@ -1365,7 +1365,8 @@ function GroupCard({ group, isSuperAdmin, onUpdate }: any) {
 
   const handleSave = async () => {
     if (!isSuperAdmin) {
-      throw new Error('Only super admins can modify group settings');
+      toast({ title: '权限不足', description: '仅超级管理员可修改全局拼团设置', variant: 'destructive' });
+      return;
     }
     const { error } = await supabase
       .from('groups')
@@ -1384,6 +1385,36 @@ function GroupCard({ group, isSuperAdmin, onUpdate }: any) {
       setEditOpen(false)
       onUpdate()
     }
+  }
+
+  const handleForceCancel = async () => {
+    if (!confirm('强制解散此拼团？房主和成员将收到通知。')) return
+    const { error } = await supabase
+      .from('groups')
+      .update({ status: 'CANCELLED' })
+      .eq('id', group.id)
+    
+    if (error) {
+      toast({ title: '操作失败', description: error.message, variant: 'destructive' })
+      return
+    }
+
+    // Notify all members
+    const members = group.members || []
+    const notifications = members.map((m: any) => ({
+      user_id: m.user_id,
+      type: 'group_cancelled',
+      title: '拼团已被管理员强制解散',
+      content: `由于平台监管原因，拼团「${group.address}」已被管理员强制取消。如有疑问请联系客服。`,
+      link_to: `/groups/${group.id}`,
+    }))
+
+    if (notifications.length > 0) {
+      await supabase.from('notifications').insert(notifications)
+    }
+
+    toast({ title: '拼团已解散' })
+    onUpdate()
   }
 
   const handleDelete = async () => {
@@ -1477,9 +1508,16 @@ function GroupCard({ group, isSuperAdmin, onUpdate }: any) {
               </DialogContent>
             </Dialog>
             {isSuperAdmin && (
-              <Button size="sm" variant="ghost" onClick={handleDelete}>
-                <Trash2 className="h-3.5 w-3.5 text-destructive" />
-              </Button>
+              <>
+                {group.status !== 'CANCELLED' && group.status !== 'COMPLETED' && (
+                  <Button size="sm" variant="ghost" title="强制解散" onClick={handleForceCancel}>
+                    <Ban className="h-3.5 w-3.5 text-destructive" />
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" title="删除拼团" onClick={handleDelete}>
+                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                </Button>
+              </>
             )}
           </div>
         </div>

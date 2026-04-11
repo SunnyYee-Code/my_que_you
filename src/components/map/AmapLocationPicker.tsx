@@ -130,12 +130,24 @@ export default function AmapLocationPicker({ onSelect, initialAddress, initialLa
 
   const handleLocate = () => {
     if (!window.AMap || !mapInstance.current) return;
-    const geolocation = new window.AMap.Geolocation({ enableHighAccuracy: true });
+    const geolocation = new window.AMap.Geolocation({
+      enableHighAccuracy: true,
+      timeout: 10000,
+      buttonPosition: 'RB',
+    });
+    
     geolocation.getCurrentPosition((status: string, result: any) => {
       if (status === 'complete') {
         const { lng, lat } = result.position;
         updateMarker(lng, lat);
         reverseGeocode(lng, lat);
+      } else {
+        console.error('Geolocation error:', result);
+        const msg = result.message?.includes('Get geolocation time out') 
+          ? '定位超时，请重试' 
+          : '定位失败，请确保已开启浏览器定位权限';
+        setError(msg);
+        setTimeout(() => setError(''), 3000);
       }
     });
   };
